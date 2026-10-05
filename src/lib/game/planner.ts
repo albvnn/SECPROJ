@@ -15,7 +15,7 @@ import { GADGETS } from "./gadgets";
 import { branchFavor, monthlyCommand, shiftBranchFavor } from "./command";
 import { ALL_LANGUAGES, LEGEND_COST, coolHeat, createLegend, healInjuries, inflictInjury, legendCap, speaksLanguage } from "./field";
 import { findPossession, payUpkeep } from "./economy";
-import { addDays } from "./calendar";
+import { addDays, monthLabel } from "./calendar";
 import { weeklyAgenda } from "@/lib/world/agenda";
 import { satisfactionOf, weeklyThreats } from "@/lib/world/threats";
 import { addNews, shiftDiplomacy, shiftTension, weeklyWorld } from "@/lib/world/world";
@@ -207,7 +207,7 @@ function newDuties(state: GameState, rng: Rng): Duty[] {
     if (week % 13 === 6 && !open("Examens de saison"))
       out.push(duty(rng, { title: "Examens de saison", description: "Langues, sciences, droit du renseignement : deux semaines pour réviser, en cours.", activity: "cours", dueDay: day + 14, required: 2, penalty: { reputation: -8, morale: -2 } }));
     if (chance(0.18, rng) && !open("Corvée"))
-      out.push(duty(rng, { title: "Corvée de la chambrée", description: "Cuisines, entretien des armes, ronde de nuit : ta chambrée est de service.", activity: "devoir", dueDay: day + 7, required: 1, penalty: { reputation: -3 } }));
+      out.push(duty(rng, { title: "Corvée de la chambrée", description: "Cuisines, entretien des armes, ronde de nuit : ta chambrée est de service.", activity: "devoir", dueDay: day + 14, required: 1, penalty: { reputation: -3 } }));
     return out;
   }
   if (order < RANKS.agent.order) return out;
@@ -335,20 +335,23 @@ const SOCIAL_ROLES = [
   "héritière d'un armateur",
 ];
 
-/** Combien de temps faire passer : un nombre de semaines, ou « jusqu'au prochain événement » (8 semaines au plus). */
+/** Combien de temps faire passer : un nombre de semaines, ou « jusqu'au prochain temps fort » (six mois au plus). */
 export type Span = number | "auto";
-export const AUTO_MAX_WEEKS = 8;
+export const AUTO_MAX_WEEKS = 26;
+export const MAX_SPAN_WEEKS = 26;
 
 export interface PeriodResult {
   state: GameState;
   weeks: number;
-  /** Lignes de toutes les semaines, les répétitions regroupées. */
+  /** La chronique de la période : semaine par semaine jusqu'à un mois, mois par mois au-delà. */
   lines: string[];
   notices: string[];
-  /** Événement de la dernière semaine, à jouer en scène. */
+  /** L'événement sur lequel la période se termine, à jouer en scène. */
   event?: string;
   /** Pourquoi le temps s'est arrêté avant la fin prévue. */
   stop: string | null;
+  /** Ce qui a arrêté le temps mérite d'être joué lentement, sur plusieurs tours. */
+  momentous: boolean;
   /** Un anniversaire est tombé pendant la période. */
   birthday?: { age: number; date: string };
 }
@@ -360,21 +363,28 @@ export function foldLines(lines: string[]): string[] {
   return [...counts.entries()].map(([l, n]) => (n > 1 ? `${l.replace(/\.$/, "")} (×${n}).` : l));
 }
 
+/** Le début d'une phrase, pour nommer un événement en peu de mots. */
+const gist = (text: string) => {
+  const head = text.split(/[:;.]/)[0].trim();
+  return head.length > 70 ? `${head.slice(0, 67).trimEnd()}…` : head;
+};
+
 /**
- * Plusieurs semaines d'affilée avec le même planning. Le temps s'arrête de lui-même sur ce qui compte :
- * un événement, une nouvelle mission, un devoir qui presse, un anniversaire, une promotion possible,
- * l'épuisement, une blessure, une arrestation, ou un planning devenu impossible.
+ * Plusieurs semaines d'affilée avec le même planning, et la vie continue : les petits événements
+ * se racontent dans la chronique. Le temps s'arrête de lui-même sur ce qui compte : un temps fort
+ * (Conseil, Jeux, menace sur la maison, ennemi qui se manifeste), une mission, un devoir qui presse,
+ * un anniversaire, une promotion possible, l'épuisement, une blessure, une arrestation, ou un planning
+ * devenu impossible.
  */
 export function resolvePeriod(initial: GameState, plan: ActivityChoice[], span: Span, rng: Rng = Math.random): PeriodResult {
-  const max = span === "auto" ? AUTO_MAX_WEEKS : Math.max(1, Math.min(12, Math.round(span)));
+  const max = span === "auto" ? AUTO_MAX_WEEKS : Math.max(1, Math.min(MAX_SPAN_WEEKS, Math.round(span)));
   let state = initial;
-  const lines: string[] = [];
   const notices: string[] = [];
   let stop: string | null = null;
+  let momentous = false;
   let event: string | undefined;
   let birthday: PeriodResult["birthday"];
-  let weeks = 0;
-  const events: string[] = [];
+  const weeksLog: { from: number; to: number; lines: string[]; event?: string }[] = [];
   for (let i = 0; i < max; i++) {
     if (i > 0) {
       const err = planError(state, plan);
@@ -388,39 +398,77 @@ export function resolvePeriod(initial: GameState, plan: ActivityChoice[], span: 
     const promosBefore = promotionsAvailable(before).length;
     const r = resolveWeek(state, plan, rng);
     state = r.state;
-    weeks++;
-    if (max > 1) lines.push(`— Semaine ${weeks} (jour ${before.world.day} → ${state.world.day}) —`);
-    lines.push(...r.report.lines);
+    weeksLog.push({ from: before.world.day, to: state.world.day, lines: r.report.lines, event: r.report.event });
     notices.push(...r.notices);
-    if (r.report.event) events.push(r.report.event);
     const c = state.character;
     const age = currentAge(state);
-    if (age > ageBefore) {
-      birthday = { age, date: dateOfAge(state, age) ?? currentDate(state) };
+    if (age > ageBefore) birthday = { age, date: dateOfAge(state, age) ?? currentDate(state) };
+    // Ce qui arrête le temps (même à la dernière semaine : ça dit comment jouer la suite).
+    const covered = (d: (typeof state.duties)[number]) => plan.some((p) => p.activity === d.activity && (d.activity !== "devoir" || !p.target || p.target === d.id));
+    // Les petites corvées, sur une longue période, se font en passant : on ne s'arrête pas pour elles.
+    if (max > 1) {
+      for (const d of state.duties) {
+        const minor = !d.penalty.merit && (d.penalty.reputation ?? 0) > -5 && !d.penalty.cover;
+        if (d.status !== "ouvert" || !minor || d.dueDay - state.world.day > 7 || covered(d)) continue;
+        state = {
+          ...state,
+          duties: state.duties.map((x) => (x.id === d.id ? { ...x, progress: x.required, status: "fait" as const } : x)),
+          character: { ...state.character, fatigue: Math.min(100, (state.character.fatigue ?? 0) + 6) },
+        };
+        weeksLog.at(-1)!.lines.push(`En passant : ${d.title} (fatigue +6).`);
+      }
     }
-    if (i === max - 1) break;
-    // Ce qui arrête le temps.
     const newOffer = state.offers.find((o) => !before.offers.some((x) => x.id === o.id));
-    const urgent = state.duties.find((d) => d.status === "ouvert" && d.dueDay - state.world.day <= 7 && d.progress < d.required);
+    // Un devoir n'arrête le temps que s'il est nouveau et que le planning ne s'en charge pas.
+    const urgent = state.duties.find(
+      (d) => d.status === "ouvert" && d.dueDay - state.world.day <= 7 && d.progress < d.required && !initial.duties.some((x) => x.id === d.id) && !covered(d),
+    );
     const nemesis = r.report.event ? state.world.geo.nemeses.find((n) => n.status === "libre" && r.report.event!.includes(n.name.split(" ")[0])) : undefined;
     if (nemesis) {
       event = r.report.event;
       stop = `${nemesis.name} se manifeste`;
-    } else if (c.prison && !before.character.prison) stop = "tu as été arrêté·e";
-    else if (birthday) stop = `ton anniversaire (${birthday.age} ans)`;
-    else if (newOffer && (newOffer.assigned || before.offers.length === 0))
+      momentous = true;
+    } else if (r.report.major && r.report.event) {
+      event = r.report.event;
+      stop = `un temps fort : ${gist(r.report.event)}`;
+      momentous = true;
+    } else if (c.prison && !before.character.prison) {
+      stop = "tu as été arrêté·e";
+      momentous = true;
+    } else if (birthday) {
+      stop = `ton anniversaire (${birthday.age} ans)`;
+      momentous = true;
+    } else if (newOffer && (newOffer.assigned || before.offers.length === 0)) {
       stop = newOffer.assigned ? `une mission t'est assignée : ${newOffer.title.split(" — ")[0]}` : `une mission est proposée : ${newOffer.title.split(" — ")[0]}`;
-    else if (urgent) stop = `un devoir presse : ${urgent.title}`;
+      momentous = Boolean(newOffer.assigned);
+    } else if (urgent) stop = `un devoir presse : ${urgent.title}`;
     else if (promotionsAvailable(state).length > promosBefore) stop = "une promotion est possible";
     else if ((c.fatigue ?? 0) >= 85) stop = "tu es épuisé·e";
     else if (c.health <= 3) stop = "ta santé est au plus bas";
     else if ((c.injuries ?? []).length > (before.character.injuries ?? []).length) stop = "une blessure";
+    // À la fin prévue, ce n'est pas un arrêt : le temps a simplement fini de passer.
+    if (i === max - 1 && !momentous) stop = null;
     if (stop) break;
   }
-  // Sur une période, le dernier événement se joue en scène ; les autres se racontent en résumé.
-  event ??= events.at(-1);
-  for (const e of events) if (e !== event) lines.push(`Il s'est aussi passé : ${e}`);
-  return { state, weeks, lines: foldLines(lines), notices, event, stop, birthday };
+
+  // L'événement de la fin de période se joue en scène ; les autres se racontent dans la chronique.
+  event ??= weeksLog.findLast((w) => w.event)?.event;
+  const others = (ws: typeof weeksLog) => [...new Set(ws.map((w) => w.event).filter((e): e is string => Boolean(e) && e !== event))].map((e) => `Il s'est aussi passé : ${e}`);
+  const start = state.world.startDate ?? "2026-10-05";
+  let lines: string[];
+  if (weeksLog.length === 1) lines = [...weeksLog[0].lines, ...others(weeksLog)];
+  else if (weeksLog.length <= 4)
+    lines = foldLines([...weeksLog.flatMap((w, n) => [`— Semaine ${n + 1} (jour ${w.from} → ${w.to}) —`, ...w.lines]), ...others(weeksLog)]);
+  else {
+    // Au-delà d'un mois : la chronique, mois par mois.
+    const months = new Map<string, typeof weeksLog>();
+    for (const w of weeksLog) {
+      const m = monthLabel(addDays(start, w.to));
+      months.set(m, [...(months.get(m) ?? []), w]);
+    }
+    lines = [...months.entries()].flatMap(([m, ws]) => [`— ${m.replace(/^./, (x) => x.toUpperCase())} (${ws.length} sem.) —`, ...foldLines(ws.flatMap((w) => w.lines)), ...others(ws)]);
+  }
+  return { state, weeks: weeksLog.length, lines, notices, event, stop, momentous, birthday };
 }
 
 export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng = Math.random): WeekResult {
@@ -981,7 +1029,8 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
     ? `Détention à ${findCity(state.character.prison.cityId)?.name ?? "l'étranger"}, aux mains de ${state.character.prison.captor} : la cellule, les interrogatoires, les autres détenus, l'espoir.`
     : (agenda.event ?? world.event ?? pickEvent(state, rng, neglected));
   state = recordProgress(state, notices);
-  const report: WeekReport = { day: now, lines, event };
+  const major = !state.character.prison && Boolean(agenda.event || world.event);
+  const report: WeekReport = { day: now, lines, event, ...(major ? { major } : {}) };
   return { state: { ...state, lastWeek: report, updatedAt: Date.now() }, report, notices };
 }
 

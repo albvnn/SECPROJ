@@ -2,6 +2,7 @@
 import { applyUpdate, createGameState, currentAge, currentDate, freeSeats, normalizeState, parseLanguages, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
 import { resolveWeek, resolvePeriod, foldLines, defaultPlan, planError } from "../src/lib/game/planner";
 import { addDays } from "../src/lib/game/calendar";
+import { schedule } from "../src/lib/game/schedule";
 import { canStartMission, chooseRoute, currentNode, makeOffer, missionAllowance, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
 import { resolveNode, runEngineAction } from "../src/lib/game/actions";
 import { buyModule, delegateOffer, openStation, setSquad } from "../src/lib/game/command";
@@ -396,6 +397,28 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
     crossed ? auto.birthday?.age === currentAge(bday) + 1 && auto.weeks <= 2 : Boolean(auto.stop) && !auto.birthday,
     `${auto.weeks} sem. · ${auto.stop}`,
   );
+  // L'anniversaire est toujours au calendrier, même à onze mois.
+  const far = `${Number(today.slice(0, 4)) - age}${addDays(today, -20).slice(4)}`;
+  const farState = { ...base, character: { ...base.character, identity: { ...base.character.identity, birthDate: far } } };
+  const bItem = schedule(farState).find((i) => i.kind === "perso");
+  check("rythme : l'anniversaire lointain figure à l'agenda", Boolean(bItem) && bItem!.day > farState.world.day + 300, bItem ? `J+${bItem.day - farState.world.day}` : "absent");
+  // À l'Académie, des périodes de plusieurs semaines : les devoirs couverts par le planning et les petits événements n'arrêtent plus le temps.
+  const cadet = { ...base, character: { ...base.character, rank: "aspirant" as const }, offers: [], world: { ...base.world, phase: "base" as const } };
+  let cs: GameState = cadet;
+  let total = 0;
+  for (let i = 0; i < 6; i++) {
+    const r = resolvePeriod(cs, defaultPlan(cs), "auto", rng);
+    total += r.weeks;
+    cs = r.state;
+  }
+  check("rythme : à l'Académie, plus d'une semaine par période en moyenne", total / 6 > 1.5, `${total} sem. en 6 périodes`);
+  // Une saison : la chronique mois par mois, et les petites corvées se font en passant.
+  const chore = { id: "corvee-test", title: "Corvée de la chambrée", description: "", activity: "devoir" as const, dueDay: cadet.world.day + 10, required: 1, progress: 0, status: "ouvert" as const, penalty: { reputation: -3 } };
+  const calm = { ...cadet, duties: [chore], world: { ...cadet.world, lastYouthOffer: cadet.world.day + 999 } };
+  const season = resolvePeriod(calm, defaultPlan(calm), 13, rng);
+  check("rythme : une saison se raconte mois par mois", season.weeks < 5 || season.lines.filter((l) => /^— [A-ZÉ]/.test(l) && l.includes("sem.)")).length >= 2, `${season.weeks} sem. · ${season.stop ?? "sans arrêt"}`);
+  check("rythme : une petite corvée ne coupe pas la saison", !season.stop?.includes("Corvée") && (season.weeks < 2 || season.lines.some((l) => l.startsWith("En passant : Corvée"))), season.stop ?? "");
+  check("rythme : jusqu'à six mois d'un coup", resolvePeriod(calm, defaultPlan(calm), 40, rng).weeks <= 26);
 }
 
 // Migration d'une sauvegarde v3.

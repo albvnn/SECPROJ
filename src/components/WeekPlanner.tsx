@@ -10,6 +10,7 @@ import { ACADEMIC_SKILLS, ACTIVITIES, ACTIVITY_IDS, activeRelations, activityBlo
 import { ATTRIBUTE_IDS, ATTRIBUTES, RANKS, SKILLS, formatEuros, skillsOf } from "@/lib/game/rules";
 import type { ActivityChoice, ActivityId, AgencyId, GameState, SkillId } from "@/lib/game/types";
 import { formatDate } from "@/lib/game/calendar";
+import { schedule } from "@/lib/game/schedule";
 import { upcoming } from "@/lib/world/agenda";
 import { CITIES, REGION_IDS, REGIONS, findCity, findCountry } from "@/lib/world/geo";
 import { knownRegions, regionOfCity } from "@/lib/game/intel";
@@ -19,12 +20,13 @@ export type Span = number | "auto";
 
 const SPANS: { value: Span; label: string; hint: string }[] = [
   { value: 1, label: "1 sem.", hint: "Une semaine, racontée en détail" },
-  { value: 2, label: "2 sem.", hint: "Deux semaines avec le même planning" },
   { value: 4, label: "1 mois", hint: "Quatre semaines avec le même planning" },
-  { value: "auto", label: "Auto", hint: "Jusqu'au prochain événement (8 semaines au plus) : nouvelle mission, devoir pressant, anniversaire, promotion, blessure…" },
+  { value: 13, label: "3 mois", hint: "Une saison : la vie continue, racontée mois par mois (s'arrête sur un temps fort)" },
+  { value: "auto", label: "Auto", hint: "Jusqu'au prochain temps fort (six mois au plus) : mission, devoir pressant, anniversaire, Conseil, Jeux, ennemi, promotion, blessure… Les petits événements se racontent en chemin." },
 ];
 
-export const playLabel = (span: Span) => (span === "auto" ? "Avancer jusqu'au prochain événement ▸" : span > 1 ? `Jouer ${span === 4 ? "le mois" : `${span} semaines`} ▸` : "Jouer la semaine ▸");
+export const playLabel = (span: Span) =>
+  span === "auto" ? "Laisser filer le temps ▸" : span >= 13 ? "Jouer la saison ▸" : span === 4 ? "Jouer le mois ▸" : span > 1 ? `Jouer ${span} semaines ▸` : "Jouer la semaine ▸";
 
 /** Le rythme : combien de temps faire passer avec ce planning. */
 export function SpanPicker({ value, onChange, disabled = false }: { value: Span; onChange?: (s: Span) => void; disabled?: boolean }) {
@@ -585,9 +587,25 @@ const AGENDA_KIND: Record<string, { label: string; color: string }> = {
 /** Les grands rendez-vous des quatre prochains mois : calendrier réel et vie du Concordat. */
 export function Agenda({ state }: { state: GameState }) {
   const list = upcoming(state, 120).sort((a, b) => a.inDays - b.inDays);
+  const birthday = schedule(state, 0).find((i) => i.kind === "perso");
+  const bIn = birthday ? birthday.day - state.world.day : 0;
   return (
     <section>
       <h3 className="label mb-2">Grands rendez-vous · 4 mois</h3>
+      {birthday && (
+        <p className="mb-1.5 flex items-baseline gap-3 rounded-sm border border-[color:var(--pole-ame)]/40 bg-panel/40 px-3 py-1.5">
+          <span className="w-16 shrink-0 font-mono text-[10px] text-muted">{bIn <= 0 ? "aujourd'hui" : `J−${bIn}`}</span>
+          <span className="min-w-0 flex-1 truncate text-sm">
+            ♥ Ton anniversaire
+            <span className="ml-2 text-[10px] text-faint">
+              {formatDate(birthday.date)} · {birthday.detail}
+            </span>
+          </span>
+          <span className="shrink-0 text-[9px] font-semibold tracking-[0.15em] uppercase" style={{ color: "var(--pole-ame)" }}>
+            Perso
+          </span>
+        </p>
+      )}
       {list.length === 0 ? (
         <p className="text-xs text-faint italic">Rien d'inscrit au calendrier.</p>
       ) : (

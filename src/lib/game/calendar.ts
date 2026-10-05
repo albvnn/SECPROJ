@@ -37,3 +37,8 @@ export function ageAt(birthIso: string, dateIso: string): number {
 export function formatDate(iso: string): string {
   return parseIso(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
+
+/** « octobre 2026 ». */
+export function monthLabel(iso: string): string {
+  return parseIso(iso).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+}

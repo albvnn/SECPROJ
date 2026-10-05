@@ -37,7 +37,7 @@ export function parseAction(v: unknown): PlayerAction | null {
         const x = (p ?? {}) as Record<string, unknown>;
         return { activity: String(x.activity ?? "repos") as never, ...(typeof x.target === "string" ? { target: x.target.slice(0, 80) } : {}) };
       }),
-      ...(o.span === "auto" ? { span: "auto" as const } : typeof o.span === "number" && o.span >= 1 && o.span <= 12 ? { span: Math.round(o.span) } : {}),
+      ...(o.span === "auto" ? { span: "auto" as const } : typeof o.span === "number" && o.span >= 1 && o.span <= 26 ? { span: Math.round(o.span) } : {}),
     };
   if (a.type === "mission_start" && str("offer", 40)) {
     const ids = (k: string) => (Array.isArray(o[k]) ? (o[k] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 6) : []);

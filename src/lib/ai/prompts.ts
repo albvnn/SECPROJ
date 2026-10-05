@@ -232,7 +232,7 @@ function paceBlock(state: GameState): string {
 
   if (phase === "base") {
     lines.push(
-      "À la base (ou à l'Académie), LE TEMPS AVANCE PAR LE PLANNING DE LA SEMAINE, joué par le jeu : n'utilise pas jours_ecoules, sauf quelques heures ou un jour au sein d'une scène. Une scène d'événement dure 1 à 3 tours, puis rends la main (choix « ellipse » pour revenir au planning).",
+      "À la base (ou à l'Académie), LE TEMPS AVANCE PAR LE PLANNING DE LA SEMAINE, joué par le jeu : n'utilise pas jours_ecoules, sauf quelques heures ou un jour au sein d'une scène. Deux échelles de temps : des périodes calmes de plusieurs semaines ou mois, racontées en chronique (la vie continue), et des TEMPS FORTS signalés par le jeu, joués sur plusieurs tours, heure par heure ou jour par jour. Un petit événement dure 1 ou 2 tours ; un temps fort 3 à 6, sans ellipse avant qu'il soit clos. Ensuite, rends la main (choix « ellipse » pour revenir au planning).",
     );
   } else if (phase !== "mission") {
     const sc = state.scene;
