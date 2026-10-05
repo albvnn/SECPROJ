@@ -669,6 +669,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
             onChange={busy ? undefined : commit}
             onOpenPromotion={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
             onOpenMallette={() => (setSheetOpen(false), setMalletteOpen(true))}
+            onOpenArchives={(folder) => (setSheetOpen(false), go({ to: "archives", folder }))}
             focusTab={sheetFocus}
             onAction={
               busy || state.log.length === 0

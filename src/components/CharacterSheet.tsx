@@ -7,13 +7,8 @@ import {
   ATTRIBUTES,
   BREVET_AGE,
   MISSION_IMPORTANCE,
-  PHASE_IDS,
-  PHASES,
-  PINS,
   POLE_POINT_COST,
-  RANK_IDS,
   RANKS,
-  SELECTION_DAYS,
   SKILLS,
   ageStage,
   findFlaw,
@@ -21,12 +16,11 @@ import {
   findQuality,
   formatEuros,
   formatMerit,
-  phaseLabel,
   skillsOf,
   xpToNext,
 } from "@/lib/game/rules";
 import { AGENCIES, SEAT_XP_BONUS, findSeat } from "@/lib/game/agencies";
-import { formatDate } from "@/lib/game/calendar";
+import { weeklyUpkeep } from "@/lib/game/economy";
 import { branchFavor } from "@/lib/game/command";
 import { heatLabel, injuryMalus, legendCap } from "@/lib/game/field";
 import {
@@ -37,7 +31,6 @@ import {
   canSpendOnSkill,
   capFor,
   currentAge,
-  currentDate,
   nextRanks,
   rankMissing,
   skillTotal,
@@ -64,19 +57,19 @@ import { DOC_LABELS, StoryDocView } from "./StoryCards";
 import { AskPerson } from "./IntelUI";
 import { Silhouette } from "./Mallette";
 import { Possessions } from "./WeekPlanner";
-import { RichText } from "./RichText";
 import { BranchSigil, SeatSigil } from "./sigils";
 import { Bar, RankBadge } from "./ui";
 import { findCity, findCountry } from "@/lib/world/geo";
 
 type Tab = "fiche" | "agent" | "relations" | "affaires" | "carnet";
 
-const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: "fiche", label: "Perso", hint: "État, compétences, blessures, langues" },
-  { id: "agent", label: "Carrière", hint: "Grade, siège ou Station, Branches, légendes" },
-  { id: "relations", label: "Liens", hint: "Les gens qui comptent" },
-  { id: "affaires", label: "Affaires", hint: "Sac, argent, patrimoine" },
-  { id: "carnet", label: "Carnet", hint: "Faits établis, pièces, dossier" },
+/** Les intercalaires du dossier : une icône, un nom, ce qu'on y trouve. */
+const TABS: { id: Tab; label: string; icon: string; hint: string }[] = [
+  { id: "fiche", label: "Aptitudes", icon: "◆", hint: "Compétences, traits, blessures, langues" },
+  { id: "agent", label: "Carrière", icon: "▲", hint: "Grade, mérite, affectation, Branches, légendes" },
+  { id: "relations", label: "Liens", icon: "☎", hint: "Les gens qui comptent, et ce qu'ils peuvent te dire" },
+  { id: "affaires", label: "Affaires", icon: "▣", hint: "Mallette, argent, patrimoine" },
+  { id: "carnet", label: "Carnet", icon: "✎", hint: "Faits établis, chapitres, dernières pièces" },
 ];
 
 interface SheetProps {
@@ -89,17 +82,24 @@ interface SheetProps {
   onOpenPromotion?: () => void;
   /** Ouvre la mallette (l'inventaire en grand). */
   onOpenMallette?: () => void;
+  /** Ouvre les archives, éventuellement sur une chemise. */
+  onOpenArchives?: (folder?: string) => void;
   /** Le terminal demande un onglet précis : `n` change à chaque demande. */
   focusTab?: { id: SheetTab; n: number } | null;
 }
 
 export type SheetTab = Tab;
 
-export function CharacterSheet({ state, onChange, onAction, onOpenPromotion, onOpenMallette, focusTab }: SheetProps) {
+/**
+ * La fiche, comme un dossier d'agent : la carte d'identité en tête, toujours visible,
+ * et des intercalaires sur la tranche pour passer d'une section à l'autre.
+ */
+export function CharacterSheet({ state, onChange, onAction, onOpenPromotion, onOpenMallette, onOpenArchives, focusTab }: SheetProps) {
   const [tab, setTab] = useState<Tab>("fiche");
   useEffect(() => {
     if (focusTab) setTab(focusTab.id);
   }, [focusTab]);
+  const agency = AGENCIES[state.character.identity.agency];
   const activeRelations = state.relations.filter((r) => r.status !== "archive" && r.status !== "mort").length;
   // Pièces reçues depuis la dernière visite du carnet.
   const [seenPieces, setSeenPieces] = useState(state.pieces?.length ?? 0);
@@ -107,42 +107,152 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion, onO
   useEffect(() => {
     if (tab === "carnet") setSeenPieces(state.pieces?.length ?? 0);
   }, [tab, state.pieces?.length]);
+  const badge: Partial<Record<Tab, React.ReactNode>> = {
+    fiche: state.character.skillPoints > 0 ? state.character.skillPoints : null,
+    agent: onOpenPromotion ? "!" : null,
+    relations: activeRelations > 0 ? <span className="opacity-60">{activeRelations}</span> : null,
+    carnet: newPieces > 0 ? newPieces : null,
+  };
+  const current = TABS.find((t) => t.id === tab)!;
   return (
-    <div className="flex h-full flex-col">
-      <nav className="flex shrink-0 border-b border-line">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            title={t.hint}
-            className={`flex-1 py-3 text-[10px] font-semibold tracking-[0.08em] uppercase transition-colors ${
-              tab === t.id ? "border-b-2 border-brass text-brass-soft" : "text-muted hover:text-ivory"
-            }`}
-          >
-            {t.label}
-            {t.id === "relations" && activeRelations > 0 && <span className="ml-1 text-faint">{activeRelations}</span>}
-            {t.id === "carnet" && newPieces > 0 && <span className="ml-1 rounded-full bg-brass px-1.5 text-[9px] text-ink">{newPieces}</span>}
-            {t.id === "fiche" && state.character.skillPoints > 0 && (
-              <span className="ml-1 rounded-full bg-brass px-1.5 text-[9px] text-ink">{state.character.skillPoints}</span>
-            )}
-          </button>
-        ))}
-      </nav>
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-5">
-        {tab === "fiche" && <Fiche state={state} onChange={onChange} />}
-        {tab === "agent" && <AgentTab state={state} onOpenPromotion={onOpenPromotion} />}
-        {tab === "relations" && <Relations state={state} onChange={onChange} onAction={onAction} />}
-        {tab === "affaires" && (
-          <div className="space-y-8">
-            <Finances state={state} />
-            {onOpenMallette && <MalletteTeaser state={state} onOpen={onOpenMallette} />}
-            <Inventory state={state} onChange={onChange} onAction={onAction} />
-            {RANKS[state.character.rank].order >= RANKS.aspirant.order && !state.character.prison && <Possessions state={state} onChange={onChange} compact />}
-          </div>
-        )}
-        {tab === "carnet" && <CarnetTab state={state} />}
+    <div className="flex h-full">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <IdCard state={state} onOpenPromotion={onOpenPromotion} />
+        <div className="flex shrink-0 items-baseline justify-between border-y border-line bg-night/40 px-4 py-1.5">
+          <span className="shrink-0 font-typewriter text-[11px] tracking-[0.25em] whitespace-nowrap uppercase" style={{ color: agency.color }}>
+            {current.icon} {current.label}
+          </span>
+          <span className="truncate pl-2 text-[10px] text-faint">{current.hint}</span>
+        </div>
+        <div key={tab} className="scrollbar-thin animate-rise min-h-0 flex-1 overflow-y-auto p-4">
+          {tab === "fiche" && <Fiche state={state} onChange={onChange} />}
+          {tab === "agent" && <AgentTab state={state} onOpenPromotion={onOpenPromotion} onOpenArchives={onOpenArchives} />}
+          {tab === "relations" && <Relations state={state} onChange={onChange} onAction={onAction} />}
+          {tab === "affaires" && (
+            <div className="space-y-6">
+              {onOpenMallette ? <MalletteTeaser state={state} onOpen={onOpenMallette} /> : <Inventory state={state} onChange={onChange} onAction={onAction} />}
+              <Finances state={state} />
+              {RANKS[state.character.rank].order >= RANKS.aspirant.order && !state.character.prison && <Possessions state={state} onChange={onChange} compact />}
+            </div>
+          )}
+          {tab === "carnet" && <CarnetTab state={state} onOpenArchives={onOpenArchives} />}
+        </div>
       </div>
+      {/* Les intercalaires, sur la tranche du dossier. */}
+      <nav aria-label="Sections de la fiche" className="flex w-9 shrink-0 flex-col gap-1 border-l border-line bg-night/60 pt-3">
+        {TABS.map((t) => {
+          const on = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              title={`${t.label} — ${t.hint}`}
+              aria-current={on ? "page" : undefined}
+              className={`relative -ml-px flex flex-col items-center gap-1.5 rounded-r-md border border-l-0 py-2.5 transition-colors ${
+                on ? "border-line-strong bg-panel text-ivory" : "border-transparent text-muted hover:bg-panel/60 hover:text-ivory"
+              }`}
+              style={on ? { boxShadow: `inset 3px 0 0 ${agency.color}` } : undefined}
+            >
+              <span className="text-xs" style={on ? { color: agency.color } : undefined}>
+                {t.icon}
+              </span>
+              <span className="text-[10px] font-semibold tracking-[0.18em] uppercase [writing-mode:vertical-rl]">{t.label}</span>
+              {badge[t.id] ? <span className="rounded-full bg-brass px-1 text-[9px] leading-tight font-bold text-ink">{badge[t.id]}</span> : null}
+            </button>
+          );
+        })}
+      </nav>
     </div>
+  );
+}
+
+/** La carte d'identité de l'agent : qui, quel grade, où, et dans quel état. */
+function IdCard({ state, onOpenPromotion }: { state: GameState; onOpenPromotion?: () => void }) {
+  const c = state.character;
+  const agency = AGENCIES[c.identity.agency];
+  const seat = findSeat(c.identity.agency, c.seat);
+  const station = findCity(c.station);
+  const age = currentAge(state);
+  const initials = `${c.identity.firstName[0] ?? ""}${c.identity.lastName[0] ?? ""}`.toUpperCase();
+  const vitals = [
+    { label: "Santé", value: c.health, max: c.healthMax, color: c.health <= 3 ? "var(--color-stamp)" : "var(--pole-corps)" },
+    { label: "Moral", value: c.morale, max: c.moraleMax, color: "var(--pole-ame)" },
+    ...(state.world.phase !== "dossier"
+      ? [
+          { label: "Fatigue", value: c.fatigue ?? 0, max: 100, color: (c.fatigue ?? 0) >= 60 ? "var(--color-fail)" : "var(--color-partial)" },
+          { label: "Couv.", title: "Couverture civile", value: c.cover ?? 0, max: 100, color: (c.cover ?? 0) < 30 ? "var(--color-fail)" : "var(--color-success)" },
+        ]
+      : []),
+  ];
+  return (
+    <header className="relative shrink-0 overflow-hidden px-4 pt-4 pb-3" style={{ background: `linear-gradient(160deg, ${tint(agency.color, 10)}, transparent 70%)` }}>
+      {/* Le filigrane de l'agence. */}
+      <span aria-hidden className="pointer-events-none absolute -top-3 -right-2 font-serif text-[64px] leading-none tracking-[0.1em] opacity-[0.05]" style={{ color: agency.color }}>
+        {agency.name}
+      </span>
+      <div className="relative flex items-start gap-3">
+        <div className="relative shrink-0">
+          <div className="grid h-[68px] w-14 place-items-center rounded-sm border font-serif text-2xl" style={{ borderColor: tint(agency.color, 50), background: tint(agency.color, 14), color: agency.color }}>
+            {initials}
+          </div>
+          <RankBadge rank={c.rank} className="absolute -right-2 -bottom-2 h-6 w-5 drop-shadow" />
+        </div>
+        <div className="min-w-0 flex-1">
+          {c.codename && <p className="font-mono text-[10px] tracking-[0.3em] text-brass uppercase">« {c.codename} »</p>}
+          <h2 className="truncate font-serif text-xl leading-tight">
+            {c.identity.firstName} {c.identity.lastName}
+          </h2>
+          <p className="truncate text-[11px] text-muted">
+            <span className="font-semibold tracking-[0.15em]" style={{ color: agency.color }}>
+              {agency.name}
+            </span>{" "}
+            · {RANKS[c.rank].label} · {age} ans
+            {c.rank === "aspirant" || c.rank === "prospect" ? ` · brassard ${c.armband}` : ""}
+          </p>
+          <p className="mt-1 flex flex-wrap gap-1">
+            {seat && (
+              <span className="rounded-sm px-1.5 py-px text-[10px]" style={{ background: tint(agency.color, 15), color: agency.color }}>
+                {seat.name}
+              </span>
+            )}
+            {station && (
+              <span className="rounded-sm px-1.5 py-px text-[10px]" style={{ background: tint(agency.color, 15), color: agency.color }}>
+                Station de {station.name}
+              </span>
+            )}
+            {c.matricule && <span className="rounded-sm bg-line/60 px-1.5 py-px font-mono text-[10px] text-muted">{c.matricule}</span>}
+          </p>
+        </div>
+      </div>
+      <div className="relative mt-3 grid grid-cols-4 gap-2">
+        {vitals.map((v) => (
+          <div key={v.label} title={`${"title" in v ? v.title : v.label} ${v.value}/${v.max}`} className="min-w-0">
+            <p className="flex items-baseline justify-between gap-1 text-[9px] tracking-[0.1em] text-muted uppercase">
+              {v.label}
+              <span className="font-mono text-[10px] text-ivory/80">{v.value}</span>
+            </p>
+            <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-line">
+              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, (v.value / v.max) * 100)}%`, background: v.color }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {c.prison && (
+        <p className="relative mt-3 rounded-sm border border-fail/50 bg-fail/[0.08] px-2.5 py-1.5 text-xs">
+          <span className="font-semibold text-fail">Détenu</span> — {c.prison.captor}, à {findCity(c.prison.cityId)?.name ?? "?"}. Évasion {c.prison.escape}/100 · secrets livrés {c.prison.leaked}/100.
+        </p>
+      )}
+      {onOpenPromotion && (
+        <button onClick={onOpenPromotion} className="relative mt-3 w-full rounded-sm py-1.5 text-[10px] font-bold tracking-[0.2em] uppercase" style={{ background: agency.color, color: "var(--color-ink)" }}>
+          ❖ Promotion possible
+        </button>
+      )}
+      {state.mission && (
+        <div className="relative mt-3">
+          <MissionPanel state={state} />
+        </div>
+      )}
+    </header>
   );
 }
 
@@ -153,85 +263,12 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion, onO
 function Fiche({ state, onChange }: SheetProps) {
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
-  const rank = RANKS[c.rank];
   const origin = findOrigin(c.originId);
-  const healthColor = c.health <= 3 ? "var(--color-stamp)" : c.health <= c.healthMax / 2 ? "var(--color-partial)" : "var(--pole-corps)";
   const seat = findSeat(c.identity.agency, c.seat);
   const seatSkills = new Set<SkillId>(seat?.specialty ?? []);
-  const station = findCity(c.station);
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start gap-3">
-        <RankBadge rank={c.rank} className="mt-1 h-12 w-10 shrink-0" />
-        <div className="min-w-0">
-          {c.codename && <p className="font-mono text-[11px] tracking-[0.3em] text-brass uppercase">« {c.codename} »</p>}
-          <h2 className="font-serif text-2xl leading-tight">
-            {c.identity.firstName} {c.identity.lastName}
-          </h2>
-          <p className="text-xs text-muted">
-            {currentAge(state)} ans · {c.identity.nationality} · {origin?.label}
-          </p>
-          <p className="mt-1 text-xs">
-            <span className="font-semibold tracking-[0.2em]" style={{ color: agency.color }}>
-              {agency.name}
-            </span>
-            <span className="text-ivory/90"> · {rank.label}</span>
-            {c.rank === "aspirant" || c.rank === "prospect" ? <span className="text-muted"> · brassard {c.armband}</span> : null}
-          </p>
-          {(seat || station || c.matricule) && (
-            <p className="mt-1 flex flex-wrap gap-1">
-              {seat && (
-                <span className="rounded-sm px-1.5 py-0.5 text-[10px] tracking-wide" style={{ background: tint(agency.color, 15), color: agency.color }}>
-                  {agency.circle.member} · {seat.name}
-                </span>
-              )}
-              {station && (
-                <span className="rounded-sm px-1.5 py-0.5 text-[10px] tracking-wide" style={{ background: tint(agency.color, 15), color: agency.color }}>
-                  Station de {station.name}
-                </span>
-              )}
-              {c.matricule && !c.codename && <span className="rounded-sm bg-line/60 px-1.5 py-0.5 font-mono text-[10px] text-muted">{c.matricule}</span>}
-            </p>
-          )}
-        </div>
-      </header>
-
-      {c.prison && (
-        <section className="rounded-sm border border-fail/50 bg-fail/[0.08] p-3 text-sm">
-          <p className="label text-fail">Détenu</p>
-          <p className="mt-0.5">
-            {c.prison.captor}, à {findCity(c.prison.cityId)?.name ?? "?"}. Évasion {c.prison.escape}/100 · secrets livrés {c.prison.leaked}/100.
-          </p>
-        </section>
-      )}
-
-      {state.mission && <MissionPanel state={state} />}
-
-      <section className="space-y-3">
-        <Bar label="Santé" value={c.health} max={c.healthMax} color={healthColor} />
-        <Bar label="Moral" value={c.morale} max={c.moraleMax} color="var(--pole-ame)" />
-        <Bar label="Réputation" value={c.reputation} max={100} color="var(--color-brass)" display={`${c.reputation}`} />
-        {state.world.phase !== "dossier" && (
-          <>
-            <Bar label="Fatigue" value={c.fatigue ?? 0} max={100} color={(c.fatigue ?? 0) >= 60 ? "var(--color-fail)" : "var(--color-partial)"} display={`${c.fatigue ?? 0}`} />
-            <Bar label="Couverture civile" value={c.cover ?? 0} max={100} color={(c.cover ?? 0) < 30 ? "var(--color-fail)" : "var(--color-success)"} display={`${c.cover ?? 0}`} />
-          </>
-        )}
-        <div className="flex items-baseline justify-between pt-1">
-          <span className="label">Solde</span>
-          <span className="font-mono text-sm text-success">{formatEuros(c.money)}</span>
-        </div>
-        {state.world.phase === "mission" && (
-          <div className="flex items-baseline justify-between" title="Fonds de l'agence pour cette mission, restitués à la fin">
-            <span className="label">Fonds d'opération</span>
-            <span className="font-mono text-sm" style={{ color: agency.color }}>
-              {formatEuros(c.missionFunds)}
-            </span>
-          </div>
-        )}
-      </section>
-
       {c.skillPoints > 0 && (
         <div className="rounded-sm border border-brass/50 bg-brass/10 px-3 py-2.5 text-sm">
           <p className="font-semibold text-brass-soft">
@@ -264,6 +301,9 @@ function Fiche({ state, onChange }: SheetProps) {
 
       <section>
         <h3 className="label mb-2">Traits</h3>
+        <p className="mb-2 text-xs text-muted">
+          {c.identity.nationality} · {origin?.label} · {c.identity.birthplace}
+        </p>
         <ul className="space-y-2 text-sm">
           {c.qualities.map(findQuality).map(
             (q) =>
@@ -447,22 +487,18 @@ const PROGRESS_ICONS: Record<ProgressKind, string> = {
   money: "€",
 };
 
-function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotion?: () => void }) {
+function AgentTab({ state, onOpenPromotion, onOpenArchives }: { state: GameState; onOpenPromotion?: () => void; onOpenArchives?: (folder?: string) => void }) {
   const c = state.character;
-  const w = state.world;
   const agency = AGENCIES[c.identity.agency];
-  const age = currentAge(state);
   const nexts = nextRanks(state).filter((r) => r !== "aspirant");
-  const phaseIndex = PHASE_IDS.indexOf(w.phase);
-  const currentOrder = RANKS[c.rank].order;
   const meritTarget = nexts.length ? Math.min(...nexts.map((r) => RANKS[r].merit).filter((m) => m > 0), Infinity) : 0;
   const hasTarget = Number.isFinite(meritTarget) && meritTarget > 0;
   const [showAll, setShowAll] = useState(false);
+  const age = currentAge(state);
 
   return (
     <div className="space-y-7">
       <section>
-        <h3 className="label mb-3">Grade</h3>
         <div className="flex items-start gap-3">
           <RankBadge rank={c.rank} className="h-10 w-8 shrink-0" />
           <div className="min-w-0 flex-1">
@@ -475,41 +511,42 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
             </p>
           </div>
         </div>
-        <div className="mt-4">
-          <div className="mb-1 flex items-baseline justify-between">
-            <span className="label">Mérite</span>
-            <span className="font-mono text-xs text-ivory/80">
-              {formatMerit(c.merit)}
-              {hasTarget && ` / ${meritTarget}`}
-              {c.blames > 0 && <span className="ml-2 text-fail">{c.blames} blâme{c.blames > 1 ? "s" : ""}</span>}
-            </span>
-          </div>
-          {hasTarget && (
-            <div className="h-1.5 overflow-hidden rounded-full bg-line">
-              <div className="h-full rounded-full bg-brass transition-all duration-700" style={{ width: `${Math.min(100, (c.merit / meritTarget) * 100)}%` }} />
+        <div className="mt-4 space-y-3">
+          <div>
+            <div className="mb-1 flex items-baseline justify-between">
+              <span className="label" title="Une mission rapporte selon son importance × son résultat. Un blâme : −3.">
+                Mérite
+              </span>
+              <span className="font-mono text-xs text-ivory/80">
+                {formatMerit(c.merit)}
+                {hasTarget && ` / ${meritTarget}`}
+                {c.blames > 0 && <span className="ml-2 text-fail">{c.blames} blâme{c.blames > 1 ? "s" : ""}</span>}
+              </span>
             </div>
-          )}
-          {nexts.length > 1 && <p className="mt-2 text-[11px] text-faint">Deux voies s'ouvrent : le terrain (le Cercle) ou le commandement.</p>}
+            {hasTarget && (
+              <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                <div className="h-full rounded-full bg-brass transition-all duration-700" style={{ width: `${Math.min(100, (c.merit / meritTarget) * 100)}%` }} />
+              </div>
+            )}
+          </div>
+          <Bar label="Réputation" value={c.reputation} max={100} color="var(--color-brass)" display={`${c.reputation}`} />
           {nexts.map((r) => {
             const missing = rankMissing(state, r);
             return (
-              <p key={r} className="mt-2 text-xs text-muted">
+              <p key={r} className="text-xs text-muted">
                 {RANKS[r].track === "terrain" ? "Terrain" : RANKS[r].track === "commandement" ? "Commandement" : "Prochain grade"} : <span className="text-ivory">{RANKS[r].label}</span>
-                {missing.length === 0 ? <span className="text-success"> — conditions remplies : à toi de la demander.</span> : <> — il manque : {missing.join(" ; ")}.</>}
+                {missing.length === 0 ? <span className="text-success"> — conditions remplies.</span> : <> — il manque : {missing.join(" ; ")}.</>}
               </p>
             );
           })}
           {onOpenPromotion && (
-            <button
-              onClick={onOpenPromotion}
-              className="mt-3 w-full rounded-sm px-3 py-2.5 text-[11px] font-bold tracking-[0.18em] uppercase"
-              style={{ background: agency.color, color: "var(--color-ink)" }}
-            >
+            <button onClick={onOpenPromotion} className="w-full rounded-sm px-3 py-2.5 text-[11px] font-bold tracking-[0.18em] uppercase" style={{ background: agency.color, color: "var(--color-ink)" }}>
               ❖ Demander ma promotion
             </button>
           )}
-          <p className="mt-2 text-[11px] leading-relaxed text-faint">
-            Une mission rapporte selon son importance (locale 1, régionale 2, continentale 4, mondiale 8) multipliée par le résultat (partiel ×0,5, réussite ×1, éclatant ×1,5). Un acte remarquable : +0,5 à +4. Un blâme : −3.
+          <p className="text-[11px] text-faint">
+            {ageStage(age).label} — {ageStage(age).description}
+            {age < BREVET_AGE && ` Brevet dans ${BREVET_AGE - age} an${BREVET_AGE - age > 1 ? "s" : ""} environ.`}
           </p>
         </div>
       </section>
@@ -534,15 +571,6 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
             ))}
           </ul>
         )}
-        <Folding title="Les distinctions du Concordat">
-          <ul className="space-y-1.5">
-            {PINS.map((p) => (
-              <li key={p.name} className="text-xs">
-                <span className="text-ivory/80">✦ {p.name}</span> <span className="text-muted">— {p.description}</span>
-              </li>
-            ))}
-          </ul>
-        </Folding>
       </section>
 
       <section>
@@ -551,7 +579,7 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
           <p className="text-sm text-faint italic">Ta progression s'écrira ici.</p>
         ) : (
           <ol className="space-y-1.5">
-            {[...state.progress].reverse().slice(0, showAll ? undefined : 12).map((p, i) => (
+            {[...state.progress].reverse().slice(0, showAll ? undefined : 8).map((p, i) => (
               <li key={i} className="flex gap-2 text-xs leading-relaxed">
                 <span className="w-4 shrink-0 text-center text-brass/80">{PROGRESS_ICONS[p.kind] ?? "·"}</span>
                 <span className="flex-1 text-ivory/85">{p.text}</span>
@@ -560,132 +588,33 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
             ))}
           </ol>
         )}
-        {state.progress.length > 12 && (
+        {state.progress.length > 8 && (
           <button onClick={() => setShowAll((v) => !v)} className="mt-2 text-[10px] tracking-[0.15em] text-muted uppercase hover:text-ivory">
             {showAll ? "Réduire" : `Tout voir (${state.progress.length})`}
           </button>
         )}
       </section>
 
-      <section className="space-y-2 border-t border-line pt-4">
-        <Folding title={`L'agence · ${agency.name}`}>
-        <p className="font-serif text-2xl tracking-[0.15em]" style={{ color: agency.color }}>
-          {agency.name}
-        </p>
-        <p className="text-xs text-ivory/80 italic">« {agency.motto} »</p>
-        <dl className="mt-2 space-y-1 text-xs leading-relaxed text-muted">
-          <div>
-            <dt className="inline text-ivory/70">Région. </dt>
-            <dd className="inline">{agency.region} · signalé{c.identity.gender === "fille" ? "e" : ""} par : {c.identity.nationality}</dd>
+      {onOpenArchives && (
+        <section className="border-t border-line pt-4">
+          <p className="label mb-2">Aux archives</p>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                ["ag:grades", "Les grades"],
+                ["ag:distinctions", "Les distinctions"],
+                ["ag:charte", `Charte ${agency.name}`],
+                ["moi:dossier", "Ton dossier"],
+              ] as const
+            ).map(([id, label]) => (
+              <button key={id} onClick={() => onOpenArchives(id)} className="rounded-sm border border-line px-2 py-1 text-[11px] text-muted hover:border-brass hover:text-ivory">
+                ▤ {label}
+              </button>
+            ))}
           </div>
-          <div>
-            <dt className="inline text-ivory/70">Direction. </dt>
-            <dd className="inline">
-              {agency.director.name}, « {agency.director.codename} »
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Quartier général. </dt>
-            <dd className="inline">{agency.hq}</dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Académie. </dt>
-            <dd className="inline">{agency.academy}</dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Laboratoire. </dt>
-            <dd className="inline">
-              {agency.lab.name}, {agency.lab.chief}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Noms de code. </dt>
-            <dd className="inline">{agency.codenames.theme}</dd>
-          </div>
-        </dl>
-              </Folding>
-        <Folding title="Les grades du Concordat">
-
-        <ol className="space-y-1.5">
-          {RANK_IDS.map((r) => {
-            const def = RANKS[r];
-            const reached = r === c.rank || (def.order < currentOrder && (def.track === "tronc" || def.track === RANKS[c.rank].track || (c.feats.seated && def.track === "terrain")));
-            const current = r === c.rank;
-            return (
-              <li
-                key={r}
-                className={`flex items-start gap-3 rounded-sm px-2 py-1.5 ${current ? "bg-brass/10 ring-1 ring-brass/40" : ""} ${reached ? "" : "opacity-55"}`}
-              >
-                <RankBadge rank={r} className="mt-0.5 h-6 w-5 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-baseline justify-between gap-2 text-sm">
-                    {def.label}
-                    <span className="shrink-0 font-mono text-[10px] text-muted">{[def.merit > 0 && `${def.merit} mér.`, def.minAge > 0 && `${def.minAge} ans`].filter(Boolean).join(" · ")}</span>
-                  </p>
-                  <p className="text-[11px] text-faint">
-                    {def.track === "terrain" || def.track === "commandement" ? <span className="mr-1 tracking-[0.12em] uppercase">{def.track === "terrain" ? "Voie du terrain." : "Voie du commandement."}</span> : null}
-                    {def.requirement}
-                  </p>
-                  {current || !reached ? <p className="text-[11px] text-muted">{def.powers}</p> : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-              </Folding>
-        <Folding title="Parcours et âge">
-
-        <ol className="relative space-y-3 border-l border-line pl-4">
-          {PHASE_IDS.filter((p) => p !== "dossier").map((p) => {
-            const done = PHASE_IDS.indexOf(p) < phaseIndex && !(p === "mission" && w.phase !== "apres");
-            const current = p === w.phase;
-            return (
-              <li key={p} className="relative">
-                <span
-                  className={`absolute top-1.5 -left-[21px] h-2.5 w-2.5 rotate-45 ${current ? "bg-brass" : done ? "bg-brass/40" : "border border-line-strong bg-ink"}`}
-                />
-                <p className={`text-sm ${current ? "text-brass-soft" : done ? "text-ivory/70" : "text-faint"}`}>
-                  {p === "base" ? phaseLabel(p, age) : PHASES[p].label}
-                  {current && p === "selection" && (
-                    <span className="ml-2 font-mono text-[11px]">
-                      jour {w.day}/{SELECTION_DAYS}
-                    </span>
-                  )}
-                  {p === "mission" && w.missionsCompleted > 0 && (
-                    <span className="ml-2 font-mono text-[11px] text-muted">
-                      {w.missionsCompleted} mission{w.missionsCompleted > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-muted">{PHASES[p].description}</p>
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-3 text-xs">
-          <span className="text-brass-soft">{ageStage(age).label}</span>
-          <span className="text-muted"> — {ageStage(age).description}</span>
-        </p>
-        <p className="mt-1 text-xs text-muted">
-          {c.identity.birthDate && `Né${c.identity.gender === "fille" ? "e" : ""} le ${formatDate(c.identity.birthDate)} · `}
-          {age} ans · {formatDate(currentDate(state))}
-          {age < BREVET_AGE && ` · Brevet dans ${BREVET_AGE - age} an${BREVET_AGE - age > 1 ? "s" : ""} environ`}
-        </p>
-              </Folding>
-      </section>
+        </section>
+      )}
     </div>
-  );
-}
-
-/** Une section repliée par défaut : ce qu'on consulte rarement. */
-function Folding({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <details className="group rounded-sm border border-line px-3 py-2">
-      <summary className="label cursor-pointer list-none select-none hover:text-ivory">
-        <span className="inline-block transition-transform group-open:rotate-90">▸</span> {title}
-      </summary>
-      <div className="mt-3">{children}</div>
-    </details>
   );
 }
 
@@ -696,11 +625,12 @@ function Finances({ state }: { state: GameState }) {
   return (
       <section>
         <h3 className="label mb-3">Finances</h3>
-        <dl className="space-y-1.5 text-sm">
-          <Row label="Solde personnelle" value={formatEuros(c.money)} valueClass="text-success" />
-          <Row label="Versement hebdomadaire" value={RANKS[c.rank].allowance ? formatEuros(RANKS[c.rank].allowance) : "—"} />
-          <Row label="Fonds d'opération max. par mission" value={RANKS[c.rank].fundsCap ? formatEuros(RANKS[c.rank].fundsCap) : "—"} />
-          <Row label="Prime de mission" value={currentOrder >= RANKS.agent.order ? "1 000 € par point de mérite" : "—"} />
+        <dl className="space-y-1.5 text-xs">
+          <Row label="Sur ton compte" value={formatEuros(c.money)} valueClass="text-success" />
+          <Row label="Solde versée / semaine" value={RANKS[c.rank].allowance ? formatEuros(RANKS[c.rank].allowance) : "—"} />
+          <Row label="Fonds d'opération max." value={RANKS[c.rank].fundsCap ? formatEuros(RANKS[c.rank].fundsCap) : "—"} />
+          <Row label="Prime de mission" value={currentOrder >= RANKS.agent.order ? "1 000 € / pt de mérite" : "—"} />
+          {weeklyUpkeep(state) > 0 && <Row label="Entretien de tes biens" value={`−${formatEuros(weeklyUpkeep(state))}/sem.`} valueClass="text-partial" />}
         </dl>
       </section>
   );
@@ -710,7 +640,7 @@ function Row({ label, value, valueClass = "" }: { label: string; value: string; 
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-muted">{label}</dt>
-      <dd className={`text-right font-mono ${valueClass}`}>{value}</dd>
+      <dd className={`text-right font-mono whitespace-nowrap ${valueClass}`}>{value}</dd>
     </div>
   );
 }
@@ -1397,73 +1327,54 @@ function Carnet({ state }: { state: GameState }) {
   );
 }
 
-function CarnetTab({ state }: { state: GameState }) {
-  const pieces = state.pieces ?? [];
-  const [view, setView] = useState<"notes" | "pieces" | "dossier">("notes");
+function CarnetTab({ state, onOpenArchives }: { state: GameState; onOpenArchives?: (folder?: string) => void }) {
   return (
-    <div className="space-y-5">
-      <div className="flex overflow-hidden rounded-sm border border-line">
-        {(
-          [
-            ["notes", "Notes"],
-            ["pieces", `Pièces${pieces.length ? ` · ${pieces.length}` : ""}`],
-            ["dossier", "Dossier"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setView(id)}
-            className={`flex-1 px-2 py-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase ${view === id ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {view === "notes" && <Carnet state={state} />}
-      {view === "pieces" && <Pieces state={state} />}
-      {view === "dossier" && <DossierTab state={state} />}
+    <div className="space-y-6">
+      <Pieces state={state} onOpenArchives={onOpenArchives} />
+      <Carnet state={state} />
     </div>
   );
 }
 
-/** Les pièces montrées par le narrateur : on peut les relire, et y revenir. */
-function Pieces({ state }: { state: GameState }) {
-  const pieces = [...(state.pieces ?? [])].reverse();
-  const [open, setOpen] = useState<number | null>(pieces.length ? 0 : null);
-  if (!pieces.length) return <p className="text-sm text-faint italic">Les messages, lettres, coupures de presse et photos que tu croiseras seront rangés ici.</p>;
+/** Les trois dernières pièces montrées par le narrateur ; les autres sont aux archives. */
+function Pieces({ state, onOpenArchives }: { state: GameState; onOpenArchives?: (folder?: string) => void }) {
+  const all = state.pieces ?? [];
+  const pieces = [...all].reverse().slice(0, 3);
+  const [open, setOpen] = useState<number | null>(null);
+  if (!pieces.length) return null;
   return (
-    <ul className="space-y-2">
-      {pieces.map((d, i) => (
-        <li key={i} className="rounded-sm border border-line">
-          <button onClick={() => setOpen(open === i ? null : i)} className="flex w-full items-baseline gap-2 px-3 py-2 text-left" aria-expanded={open === i}>
-            <span className="w-4 shrink-0 text-center text-brass">{DOC_LABELS[d.type].icon}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm">{d.titre}</span>
-              <span className="text-[10px] text-faint">
-                {DOC_LABELS[d.type].label}
-                {d.de ? ` · ${d.de}` : ""}
-                {d.day !== undefined ? ` · J${d.day}` : ""}
-              </span>
-            </span>
+    <section>
+      <h3 className="label mb-2 flex items-baseline justify-between">
+        <span>Dernières pièces</span>
+        {onOpenArchives && all.length > 0 && (
+          <button onClick={() => onOpenArchives()} className="text-[10px] tracking-[0.12em] text-brass-soft hover:underline">
+            ▤ toutes ({all.length}) aux archives
           </button>
-          {open === i && (
-            <div className="border-t border-line px-1 pb-1 text-base">
-              <StoryDocView doc={d} />
-            </div>
-          )}
-        </li>
-      ))}
-    </ul>
+        )}
+      </h3>
+      <ul className="space-y-1.5">
+        {pieces.map((d, i) => (
+          <li key={i} className="rounded-sm border border-line">
+            <button onClick={() => setOpen(open === i ? null : i)} className="flex w-full items-baseline gap-2 px-3 py-2 text-left" aria-expanded={open === i}>
+              <span className="w-4 shrink-0 text-center text-brass">{DOC_LABELS[d.type].icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm">{d.titre}</span>
+                <span className="text-[10px] text-faint">
+                  {DOC_LABELS[d.type].label}
+                  {d.de ? ` · ${d.de}` : ""}
+                  {d.day !== undefined ? ` · J${d.day}` : ""}
+                </span>
+              </span>
+            </button>
+            {open === i && (
+              <div className="border-t border-line px-1 pb-1 text-base">
+                <StoryDocView doc={d} />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-function DossierTab({ state }: { state: GameState }) {
-  if (!state.dossier) return <p className="text-sm text-faint italic">Dossier en cours de rédaction.</p>;
-  return (
-    <article className="paper rounded-sm p-5 font-typewriter text-[13px] leading-relaxed">
-      <div className="prose-narrative">
-        <RichText text={state.dossier.text} variant="dossier" />
-      </div>
-    </article>
-  );
-}

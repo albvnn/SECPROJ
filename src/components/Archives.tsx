@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AGENCIES, AGENCY_IDS } from "@/lib/game/agencies";
 import { circleVisible, clearance, clearanceDef, factionOpen, operativeKnown } from "@/lib/game/intel";
 import { OPERATIVE_TRAITS, operativeTitle } from "@/lib/game/roster";
-import { MISSION_IMPORTANCE, MISSION_RESULTS, SKILLS } from "@/lib/game/rules";
+import { MISSION_IMPORTANCE, MISSION_RESULTS, PINS, RANK_IDS, RANKS } from "@/lib/game/rules";
+import { RichText } from "./RichText";
+import { RankBadge } from "./ui";
 import { TOPICS, gradeLabel } from "@/lib/game/sources";
 import type { GameState, MissionRecord, MissionResult, NodeStatus, StoryDoc } from "@/lib/game/types";
 import { FACTIONS } from "@/lib/world/factions";
 import { REGIONS, findCity, type RegionId } from "@/lib/world/geo";
 import { DOSSIER_FULL } from "@/lib/world/threats";
+import { SkillChips } from "./glyphs";
 import { GRADE_COLOR } from "./IntelUI";
 import { DOC_LABELS, StoryDocView } from "./StoryCards";
 
@@ -380,6 +383,23 @@ function buildDrawers(state: GameState): Drawer[] {
 
   // IV. Personnes : tes liens, les agents dont tu as le dossier, tes ennemis.
   const people: Folder[] = [
+    ...(state.dossier
+      ? [
+          {
+            id: "moi:dossier",
+            title: `Ton dossier — ${c.identity.firstName} ${c.identity.lastName}`,
+            meta: `${c.matricule ?? "sans matricule"} · rédigé à ton recrutement`,
+            text: `${c.codename ?? ""} ${state.dossier.summary}`,
+            need: 0,
+            stamp: { label: "Personnel", color: "#b4483c" },
+            render: () => (
+              <div className="prose-narrative font-typewriter text-[13px] leading-relaxed">
+                <RichText text={state.dossier!.text} variant="dossier" />
+              </div>
+            ),
+          },
+        ]
+      : []),
     ...state.relations
       .filter((r) => r.status !== "archive")
       .map((r) => ({
@@ -417,13 +437,11 @@ function buildDrawers(state: GameState): Drawer[] {
             <Field label="Origine">
               {o.nationality}, {o.age} ans
             </Field>
-            <Field label="Compétences">
-              {Object.entries(o.skills)
-                .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
-                .slice(0, 4)
-                .map(([k, v]) => `${SKILLS[k as keyof typeof SKILLS].label} ${v}`)
-                .join(" · ")}
-            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Compétences">
+                <SkillChips skills={o.skills} max={6} size="md" />
+              </Field>
+            </div>
             <Field label="Caractère">{OPERATIVE_TRAITS[o.trait]?.label ?? o.trait}</Field>
             <Field label="Dernière position">{findCity(o.cityId)?.name ?? "?"}</Field>
             <Field label="Avec toi">
@@ -483,6 +501,99 @@ function buildDrawers(state: GameState): Drawer[] {
 
   // VI. Archives de l'agence : ce que ton accréditation permet de consulter.
   const agencyFolders: Folder[] = [
+    {
+      id: "ag:charte",
+      title: `${agency.name} — charte et organigramme`,
+      meta: `« ${agency.motto} »`,
+      text: `${agency.director.name} ${agency.hq} ${agency.academy} ${agency.lab.name}`,
+      need: 0,
+      render: () => (
+        <div className="space-y-4">
+          <p className="text-sm">{agency.organization}</p>
+          <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            <Field label="Direction">
+              {agency.director.name}, « {agency.director.codename} »
+            </Field>
+            <Field label="Quartier général">{agency.hq}</Field>
+            <Field label="Académie">{agency.academy}</Field>
+            <Field label="Laboratoire">
+              {agency.lab.name}, {agency.lab.chief}
+            </Field>
+            <Field label="Région">{agency.region}</Field>
+            <Field label="Noms de code">{agency.codenames.theme}</Field>
+          </div>
+          <Field label="Les trois Branches">
+            <ul className="mt-1 space-y-1.5">
+              {agency.branches.map((b) => (
+                <li key={b.id}>
+                  <span className="font-semibold">{b.name}</span> — {b.role} <span className="opacity-70">({b.chief.name})</span>
+                </li>
+              ))}
+            </ul>
+          </Field>
+        </div>
+      ),
+    },
+    {
+      id: "ag:grades",
+      title: "Les grades du Concordat",
+      meta: "Conditions, pouvoirs et devoirs de chaque grade",
+      text: RANK_IDS.map((r) => RANKS[r].label).join(" "),
+      need: 0,
+      render: () => (
+        <ol className="space-y-3">
+          {RANK_IDS.map((r) => {
+            const def = RANKS[r];
+            return (
+              <li key={r} className={`flex gap-3 rounded-sm p-2 ${r === c.rank ? "bg-[#24201a]/10 ring-1 ring-[#24201a]/30" : ""}`}>
+                <RankBadge rank={r} className="mt-0.5 h-7 w-6 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    {def.label}
+                    {r === c.rank && <span className="ml-2 font-typewriter text-[10px] tracking-[0.2em] uppercase opacity-70">ton grade</span>}
+                    <span className="ml-2 font-typewriter text-[11px] font-normal opacity-60">{[def.merit > 0 && `${def.merit} mérite`, def.minAge > 0 && `${def.minAge} ans`, def.track === "terrain" && "voie du terrain", def.track === "commandement" && "voie du commandement"].filter(Boolean).join(" · ")}</span>
+                  </p>
+                  <p className="text-xs opacity-80">{def.requirement}</p>
+                  <p className="text-xs">
+                    <span className="opacity-60">Pouvoirs. </span>
+                    {def.powers}
+                  </p>
+                  <p className="text-xs">
+                    <span className="opacity-60">Devoirs. </span>
+                    {def.duties}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+          <li className="font-typewriter text-xs opacity-70">
+            Mérite d'une mission : importance (locale 1, régionale 2, continentale 4, mondiale 8) × résultat (partiel ×0,5, réussite ×1, éclatant ×1,5). Acte remarquable : +0,5 à +4. Blâme : −3.
+          </li>
+        </ol>
+      ),
+    },
+    {
+      id: "ag:distinctions",
+      title: "Les distinctions du Concordat",
+      meta: `${c.distinctions.length} obtenue${c.distinctions.length > 1 ? "s" : ""} sur ${PINS.length}`,
+      text: PINS.map((p) => p.name).join(" "),
+      need: 0,
+      render: () => (
+        <ul className="space-y-2">
+          {PINS.map((p) => {
+            const got = c.distinctions.find((d) => d.name === p.name);
+            return (
+              <li key={p.name} className={got ? "" : "opacity-60"}>
+                <p className="text-sm">
+                  <span className={got ? "text-[#9a7414]" : ""}>{got ? "✦" : "✧"}</span> <span className="font-semibold">{p.name}</span>
+                </p>
+                <p className="pl-4 text-xs">{got ? got.reason : p.description}</p>
+              </li>
+            );
+          })}
+        </ul>
+      ),
+    },
     {
       id: "ag:cercle",
       title: `Registre ${agency.circle.name.startsWith("les") ? "des" : "de"} ${agency.circle.name.replace(/^(les|la) /, "")}`,

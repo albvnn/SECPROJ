@@ -112,11 +112,11 @@ export function Terminal({
     nav("nav:effectif", "☷", "Effectif et Cercles", "Les agents, les Cercles des trois agences", { to: "effectif" }, "agence agents equipe");
     if (!cadet) nav("nav:commandement", "▲", "Ce que tu diriges", "Station, équipe, informateurs", { to: "commandement" }, "station sources informateurs");
     nav("nav:archives", "▤", "Archives", "Tes dossiers et ceux que l'agence te laisse lire", { to: "archives" }, "dossiers classeur");
-    nav("nav:fiche", "◐", "Fiche · Perso", "État, compétences, blessures", { to: "fiche", tab: "fiche" }, "competences personnage");
-    nav("nav:carriere", "◐", "Fiche · Carrière", "Grade, siège, Branches, légendes", { to: "fiche", tab: "agent" }, "grade promotion legendes");
+    nav("nav:fiche", "◐", "Fiche · Aptitudes", "Compétences, traits, blessures, langues", { to: "fiche", tab: "fiche" }, "competences personnage perso");
+    nav("nav:carriere", "◐", "Fiche · Carrière", "Grade, mérite, siège, Branches, légendes", { to: "fiche", tab: "agent" }, "grade promotion legendes merite");
     nav("nav:liens", "◐", "Fiche · Liens", "Les gens qui comptent", { to: "fiche", tab: "relations" }, "relations contacts");
-    nav("nav:affaires", "◐", "Fiche · Affaires", "Argent, patrimoine, inventaire", { to: "fiche", tab: "affaires" }, "argent finances biens");
-    nav("nav:carnet", "◐", "Fiche · Carnet", "Faits établis, pièces, dossier", { to: "fiche", tab: "carnet" }, "notes pieces");
+    nav("nav:affaires", "◐", "Fiche · Affaires", "Mallette, argent, patrimoine", { to: "fiche", tab: "affaires" }, "argent finances biens inventaire");
+    nav("nav:carnet", "◐", "Fiche · Carnet", "Faits établis, chapitres, dernières pièces", { to: "fiche", tab: "carnet" }, "notes pieces journal");
 
     // Missions.
     if (state.mission)
