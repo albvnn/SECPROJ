@@ -57,7 +57,7 @@ import type {
 } from "./types";
 import { addDays, addYears, ageAt, isoDate } from "./calendar";
 import { commandOnPromotion, emptyCommand } from "./command";
-import { injuryMalus } from "./field";
+import { canonicalLanguages, injuryMalus } from "./field";
 import { bodyMod, initialBody } from "./body";
 import { pushLedger } from "./ledger";
 import { findOperative, romanceAllowed, withHistory } from "./bonds";
@@ -246,10 +246,12 @@ export function createGameState(draft: CharacterDraft): GameState {
 
 /** « Français, arabe » → ["français", "arabe"]. */
 export function parseLanguages(text: string): string[] {
-  return (text ?? "")
-    .split(/[,;/]| et /)
-    .map((l) => l.trim().toLowerCase())
-    .filter(Boolean);
+  return canonicalLanguages(
+    (text ?? "")
+      .split(/[,;/+]| et |\n/)
+      .map((l) => l.trim())
+      .filter(Boolean),
+  );
 }
 
 /** Ville de la carte la plus proche de l'histoire du personnage : son lieu de naissance, ou une ville de son pays. */
@@ -338,7 +340,7 @@ export function normalizeState(s: GameState): GameState {
       heat: s.character.heat ?? {},
       injuries: s.character.injuries ?? [],
       body: s.character.body ?? initialBody(s.character),
-      spoken: s.character.spoken ?? parseLanguages(s.character.identity.languages),
+      spoken: s.character.spoken ? canonicalLanguages(s.character.spoken) : parseLanguages(s.character.identity.languages),
       learning: s.character.learning ?? {},
       possessions: s.character.possessions ?? [],
       prison: s.character.prison ?? null,

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AGENCIES, SEAT_XP_BONUS, type SeatDef } from "@/lib/game/agencies";
 import { freeSeats, occupiedSeats, rankMissing, skillTotal } from "@/lib/game/engine";
-import { languagesOf } from "@/lib/game/field";
+import { languagesOf, speaksLanguage } from "@/lib/game/field";
 import { ATTRIBUTES, RANKS, SKILLS } from "@/lib/game/rules";
 import type { GameState, RankId } from "@/lib/game/types";
 import { tint } from "@/lib/ui/color";
@@ -122,7 +122,7 @@ function StationChoice({ state, selected, onPick }: { state: GameState; selected
         const region = country?.region as RegionId;
         const t = state.world.geo.tensions[region] ?? 50;
         const langs = languagesOf(city.country);
-        const speaks = langs.some((l) => c.spoken.includes(l));
+        const speaks = langs.some((l) => speaksLanguage(c, l));
         const threats = state.world.geo.threats.filter((x) => x.region === region && x.known).length;
         const people = state.relations.filter((r) => r.cityId === id).length;
         const on = selected === id;

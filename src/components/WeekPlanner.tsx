@@ -5,7 +5,7 @@ import { AGENCIES, findSeat } from "@/lib/game/agencies";
 import { BRANCH_FAVOR_MIN, skillTotal } from "@/lib/game/engine";
 import { branchFavor } from "@/lib/game/command";
 import { POSSESSIONS, buyPossession, owns, sellPossession, weeklyUpkeep, type PossessionDef } from "@/lib/game/economy";
-import { ALL_LANGUAGES, LEGEND_COST, legendCap } from "@/lib/game/field";
+import { ALL_LANGUAGES, LEGEND_COST, legendCap, speaksLanguage } from "@/lib/game/field";
 import { ACADEMIC_SKILLS, ACTIVITIES, ACTIVITY_IDS, activeRelations, activityBlocker, assetCap, planError } from "@/lib/game/planner";
 import { ATTRIBUTE_IDS, ATTRIBUTES, RANKS, SKILLS, formatEuros, skillsOf } from "@/lib/game/rules";
 import type { ActivityChoice, ActivityId, AgencyId, GameState, SkillId } from "@/lib/game/types";
@@ -156,7 +156,7 @@ function defaultTarget(state: GameState, a: ActivityId): string | undefined {
     case "branch":
       return AGENCIES[c.identity.agency].branches[0]?.id;
     case "language":
-      return Object.keys(c.learning ?? {})[0] ?? ALL_LANGUAGES.find((l) => !c.spoken.includes(l));
+      return Object.keys(c.learning ?? {})[0] ?? ALL_LANGUAGES.find((l) => !speaksLanguage(c, l));
     case "legend":
       return c.legends.length >= legendCap(c) ? c.legends[0]?.id : undefined;
     default:
@@ -358,7 +358,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   }
   if (def.target === "language") {
     const learning = Object.entries(c.learning ?? {}).sort((a, b) => b[1] - a[1]);
-    const rest = ALL_LANGUAGES.filter((l) => !c.spoken.includes(l) && !(l in (c.learning ?? {})));
+    const rest = ALL_LANGUAGES.filter((l) => !speaksLanguage(c, l) && !(l in (c.learning ?? {})));
     return (
       <>
         <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
