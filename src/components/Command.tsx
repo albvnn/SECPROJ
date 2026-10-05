@@ -7,7 +7,7 @@ import { RELATION_LIMIT, applyUpdate, recordProgress } from "@/lib/game/engine";
 import { GADGETS } from "@/lib/game/gadgets";
 import { assetCap } from "@/lib/game/planner";
 import { OPERATIVE_TRAITS, operativeTitle } from "@/lib/game/roster";
-import { RANKS, SKILLS, can, formatEuros, type Capability } from "@/lib/game/rules";
+import { RANKS, can, formatEuros, type Capability } from "@/lib/game/rules";
 import type { AgencyId, GameState, HqModule, Operative, OperativeRole, RankId, StationModule } from "@/lib/game/types";
 import { tint } from "@/lib/ui/color";
 import { CITIES, REGION_IDS, REGIONS, findCity, findCountry, type RegionId } from "@/lib/world/geo";
@@ -15,6 +15,7 @@ import { SeatSigil } from "./sigils";
 import { AskPerson, Classified, RequestButton } from "./IntelUI";
 import { circleVisible, operativeKnown, operativeListed } from "@/lib/game/intel";
 import { RankBadge } from "./ui";
+import { SkillChips } from "./glyphs";
 
 function ago(day: number, now: number) {
   const d = now - day;
@@ -140,12 +141,8 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
               </div>
               {filed ? (
                 <>
-                  <p className="mt-2 flex flex-wrap gap-x-2.5 text-[11px] text-ivory/80">
-                    {top.map(([k, v]) => (
-                      <span key={k}>
-                        {SKILLS[k as keyof typeof SKILLS].label} <span className="font-mono">{v}</span>
-                      </span>
-                    ))}
+                  <p className="mt-2 text-ivory/85">
+                    <SkillChips skills={top} />
                   </p>
                   <p className="mt-1 text-[11px] text-faint" title={trait?.description}>
                     {trait?.label} — {trait?.description}

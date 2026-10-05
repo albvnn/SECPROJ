@@ -28,7 +28,7 @@ import { findCity, findCountry } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
 import { threatVisible } from "@/lib/game/intel";
 import { Classified, RequestButton } from "./IntelUI";
-import { SkillGlyph } from "./glyphs";
+import { SkillChips, SkillGlyph } from "./glyphs";
 
 const IMPORTANCE_COLOR: Record<string, string> = {
   locale: "var(--color-muted)",
@@ -494,12 +494,8 @@ function MateCard({ o, on, onClick }: { o: Operative; on: boolean; onClick?: () 
         <span className="text-[11px] text-muted">
           {o.nationality} · {operativeTitle(o)}
         </span>
-        <span className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-ivory/80">
-          {skills.map(([k, v]) => (
-            <span key={k}>
-              {SKILLS[k as keyof typeof SKILLS].label} {v}
-            </span>
-          ))}
+        <span className="mt-1 text-ivory/85">
+          <SkillChips skills={skills} />
         </span>
         <span className="mt-0.5 text-[10px] text-faint" title={trait?.description}>
           {trait?.label}

@@ -8,6 +8,7 @@ import type { GameState } from "@/lib/game/types";
 import { CITIES, findCountry } from "@/lib/world/geo";
 import { archiveIndex } from "./Archives";
 import type { SheetTab } from "./CharacterSheet";
+import type { PhoneApp } from "./Phone";
 
 /** Où le terminal peut t'emmener. */
 export type NavTarget =
@@ -19,7 +20,8 @@ export type NavTarget =
   | { to: "commandement" }
   | { to: "archives"; folder?: string }
   | { to: "fiche"; tab: SheetTab }
-  | { to: "mallette" };
+  | { to: "mallette" }
+  | { to: "phone"; app?: PhoneApp };
 
 type Group = "Récents" | "Agir" | "Aller" | "Missions" | "Lieux" | "Personnes" | "Dossiers";
 
@@ -112,11 +114,16 @@ export function Terminal({
     nav("nav:effectif", "☷", "Effectif et Cercles", "Les agents, les Cercles des trois agences", { to: "effectif" }, "agence agents equipe");
     if (!cadet) nav("nav:commandement", "▲", "Ce que tu diriges", "Station, équipe, informateurs", { to: "commandement" }, "station sources informateurs");
     nav("nav:archives", "▤", "Archives", "Tes dossiers et ceux que l'agence te laisse lire", { to: "archives" }, "dossiers classeur");
-    nav("nav:fiche", "◐", "Fiche · Perso", "État, compétences, blessures", { to: "fiche", tab: "fiche" }, "competences personnage");
-    nav("nav:carriere", "◐", "Fiche · Carrière", "Grade, siège, Branches, légendes", { to: "fiche", tab: "agent" }, "grade promotion legendes");
-    nav("nav:liens", "◐", "Fiche · Liens", "Les gens qui comptent", { to: "fiche", tab: "relations" }, "relations contacts");
-    nav("nav:affaires", "◐", "Fiche · Affaires", "Argent, patrimoine, inventaire", { to: "fiche", tab: "affaires" }, "argent finances biens");
-    nav("nav:carnet", "◐", "Fiche · Carnet", "Faits établis, pièces, dossier", { to: "fiche", tab: "carnet" }, "notes pieces");
+    nav("nav:fiche", "◐", "Fiche · Aptitudes", "Compétences, traits, blessures, langues", { to: "fiche", tab: "fiche" }, "competences personnage perso");
+    nav("nav:carriere", "◐", "Fiche · Carrière", "Grade, mérite, siège, Branches, légendes", { to: "fiche", tab: "agent" }, "grade promotion legendes merite");
+    nav("nav:couvertures", "◐", "Fiche · Couvertures", "Légendes, couverture civile, fiché par pays", { to: "fiche", tab: "legendes" }, "legendes passeports notoriete fiche");
+    nav("tel:agenda", "▦", "Téléphone · Agenda", "Calendrier, semaine, échéances", { to: "phone", app: "agenda" }, "calendrier planning echeances devoirs");
+    nav("tel:messages", "✉", "Téléphone · Messages", "Tes contacts : écrire, demander un service", { to: "phone", app: "messages" }, "liens relations contacts");
+    nav("tel:reseau", "⌕", "Téléphone · Réseau", "Les réponses que tu attends", { to: "phone", app: "reseau" }, "questions sources");
+    nav("tel:banque", "€", "Téléphone · Banque", "Compte, entretien, patrimoine", { to: "phone", app: "banque" }, "argent finances biens solde");
+    nav("tel:sante", "✚", "Téléphone · Santé", "Santé, moral, énergie, blessures", { to: "phone", app: "sante" }, "blessures fatigue");
+    nav("tel:notes", "✎", "Téléphone · Notes", "Faits établis, chapitres", { to: "phone", app: "notes" }, "carnet journal");
+    nav("tel:pieces", "▣", "Téléphone · Pièces", "Messages, lettres, photos gardés", { to: "phone", app: "photos" }, "photos documents");
 
     // Missions.
     if (state.mission)

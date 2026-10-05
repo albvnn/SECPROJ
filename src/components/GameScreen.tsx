@@ -37,6 +37,8 @@ import { HQ } from "./HQ";
 import { Archives } from "./Archives";
 import { Mallette } from "./Mallette";
 import { Terminal, type NavTarget } from "./Terminal";
+import { Phone, type PhoneApp } from "./Phone";
+import { schedule } from "@/lib/game/schedule";
 import type { SheetTab } from "./CharacterSheet";
 import { threatVisible } from "@/lib/game/intel";
 import { StoryCardView, StoryDocView } from "./StoryCards";
@@ -100,6 +102,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
   const [storageWarning, setStorageWarning] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [malletteOpen, setMalletteOpen] = useState(false);
+  const [phone, setPhone] = useState<{ open: boolean; app: PhoneApp | null }>({ open: false, app: null });
   const [offerFocus, setOfferFocus] = useState<{ id: string; n: number } | null>(null);
   const [mapFocus, setMapFocus] = useState<{ id: string; n: number } | null>(null);
   const [archiveFocus, setArchiveFocus] = useState<{ id: string; n: number } | null>(null);
@@ -119,6 +122,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
         setTerminalOpen(false);
         setMalletteOpen((o) => !o);
       }
+      if (e.key === "t" || e.key === "T") setPhone((p) => ({ open: !p.open, app: p.app }));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -375,9 +379,12 @@ export function GameScreen({ initial }: { initial: GameState }) {
         return;
       case "mallette":
         return setMalletteOpen(true);
+      case "phone":
+        return setPhone({ open: true, app: target.app ?? null });
     }
   };
   const atBase = w.phase === "base" && !state.mission;
+  const urgentCount = schedule(state, 14).filter((i) => i.urgent).length;
   const terminalActions = busy || state.log.length === 0
     ? []
     : [
@@ -417,6 +424,18 @@ export function GameScreen({ initial }: { initial: GameState }) {
               >
                 <span className="text-success">$_</span>
                 <kbd className="hidden text-[10px] text-faint md:inline">Ctrl K</kbd>
+              </button>
+              <button
+                onClick={() => setPhone((p) => ({ open: !p.open, app: p.app }))}
+                title="Téléphone : agenda, messages, banque… (T)"
+                aria-label="Téléphone"
+                className={`relative grid h-[30px] w-9 place-items-center rounded-sm border transition-colors hover:border-brass ${phone.open ? "border-brass text-brass" : "border-line text-ivory/80"}`}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                  <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+                  <path d="M10.5 18.5h3" />
+                </svg>
+                {urgentCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-4 rounded-full bg-fail px-1 text-[9px] leading-4 font-bold text-white">{urgentCount}</span>}
               </button>
               <button
                 onClick={() => setMalletteOpen(true)}
@@ -669,6 +688,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
             onChange={busy ? undefined : commit}
             onOpenPromotion={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
             onOpenMallette={() => (setSheetOpen(false), setMalletteOpen(true))}
+            onOpenArchives={(folder) => (setSheetOpen(false), go({ to: "archives", folder }))}
             focusTab={sheetFocus}
             onAction={
               busy || state.log.length === 0
@@ -687,6 +707,20 @@ export function GameScreen({ initial }: { initial: GameState }) {
             onChange={busy ? undefined : commit}
             onAction={busy || state.log.length === 0 ? undefined : (a) => (setTab("recit"), play(a))}
             onClose={() => setMalletteOpen(false)}
+          />
+        )}
+        {phone.open && w.phase !== "dossier" && (
+          <Phone
+            state={state}
+            plan={plan}
+            app={phone.app}
+            onChange={busy ? undefined : commit}
+            onAction={busy || state.log.length === 0 ? undefined : (a) => (setPhone((p) => ({ ...p, open: false })), setTab("recit"), play(a))}
+            onClose={() => setPhone((p) => ({ ...p, open: false }))}
+            go={(t) => {
+              if (!window.matchMedia("(min-width: 640px)").matches) setPhone((p) => ({ ...p, open: false }));
+              go(t);
+            }}
           />
         )}
         {terminalOpen && <Terminal state={state} onClose={() => setTerminalOpen(false)} go={go} actions={terminalActions} />}

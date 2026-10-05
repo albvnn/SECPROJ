@@ -217,3 +217,54 @@ export function PoleEmblem({ pole, className = "h-8 w-8" }: { pole: AttributeId;
     </svg>
   );
 }
+
+/**
+ * Les compétences d'une personne en pastilles : le glyphe et la couleur de leur pôle,
+ * le niveau en chiffres et en crans (sur 10).
+ */
+export function SkillChips({
+  skills,
+  max = 4,
+  size = "sm",
+  showLevel = true,
+}: {
+  skills: Partial<Record<SkillId, number>> | [SkillId | string, number | undefined][];
+  max?: number;
+  size?: "sm" | "md";
+  showLevel?: boolean;
+}) {
+  const list = (Array.isArray(skills) ? skills : Object.entries(skills))
+    .filter((e): e is [SkillId, number] => typeof e[1] === "number" && e[0] in SKILLS)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max);
+  if (!list.length) return null;
+  const md = size === "md";
+  return (
+    <span className="inline-flex flex-wrap gap-1.5">
+      {list.map(([k, v]) => {
+        const color = ATTRIBUTES[SKILLS[k].attribute].color;
+        return (
+          <span
+            key={k}
+            title={`${SKILLS[k].label} ${v} — ${ATTRIBUTES[SKILLS[k].attribute].label}`}
+            className={`inline-flex items-center gap-1 rounded-sm border ${md ? "px-1.5 py-0.5 text-xs" : "px-1 py-px text-[10px]"}`}
+            style={{ borderColor: `color-mix(in srgb, ${color} 45%, transparent)`, background: `color-mix(in srgb, ${color} 10%, transparent)` }}
+          >
+            <SkillGlyph skill={k} className={md ? "h-3.5 w-3.5" : "h-3 w-3"} />
+            <span>{SKILLS[k].label}</span>
+            <span className="font-mono font-semibold" style={{ color }}>
+              {v}
+            </span>
+            {showLevel && md && (
+              <span className="ml-0.5 flex gap-px" aria-hidden>
+                {Array.from({ length: 5 }, (_, i) => (
+                  <span key={i} className="h-2 w-[3px] rounded-[1px]" style={{ background: i < Math.round(v / 2) ? color : `color-mix(in srgb, ${color} 20%, transparent)` }} />
+                ))}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}

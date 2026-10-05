@@ -375,3 +375,19 @@
 .map-pulse {
   animation: map-pulse 1.8s ease-out infinite;
 }
+
+/* Les itinéraires sur le globe : des pointillés qui avancent vers la mission. */
+@keyframes map-dash {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+.map-dash {
+  animation: map-dash 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-dash,
+  .map-pulse {
+    animation: none;
+  }
+}
