@@ -13,7 +13,7 @@ import type { ActivityChoice, ActivityId, Asset, Duty, GameState, Operative, Ran
 import { CITIES, findCity, findCountry, matchCity } from "@/lib/world/geo";
 import { GADGETS } from "./gadgets";
 import { branchFavor, monthlyCommand, shiftBranchFavor } from "./command";
-import { ALL_LANGUAGES, LEGEND_COST, coolHeat, createLegend, healInjuries, legendCap } from "./field";
+import { ALL_LANGUAGES, LEGEND_COST, coolHeat, createLegend, healInjuries, legendCap, speaksLanguage } from "./field";
 import { findPossession, payUpkeep } from "./economy";
 import { addDays } from "./calendar";
 import { weeklyAgenda } from "@/lib/world/agenda";
@@ -81,7 +81,7 @@ export function activityBlocker(state: GameState, id: ActivityId): string | null
   if (state.character.prison) return def.prison ? null : "tu es en détention";
   if (def.prison) return "réservé à la détention";
   if (id === "legende" && legendCap(state.character) === 0) return "pas avant le Brevet";
-  if (id === "langue" && ALL_LANGUAGES.every((l) => state.character.spoken.includes(l))) return "tu parles déjà tout";
+  if (id === "langue" && ALL_LANGUAGES.every((l) => speaksLanguage(state.character, l))) return "tu parles déjà tout";
   if (def.academy === true && !cadet) return "réservé aux cadets de l'Académie";
   if (def.academy === false && cadet) return "pas à l'Académie";
   if (def.cap && !can(state.character.rank, def.cap)) return "pas à ton grade";

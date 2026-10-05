@@ -1,5 +1,5 @@
 /** Tests hors-ligne du moteur v4. `npx tsx scripts/engine-test.ts` */
-import { applyUpdate, createGameState, freeSeats, normalizeState, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
+import { applyUpdate, createGameState, freeSeats, normalizeState, parseLanguages, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
 import { resolveWeek, defaultPlan, planError } from "../src/lib/game/planner";
 import { canStartMission, chooseRoute, currentNode, makeOffer, missionAllowance, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
 import { resolveNode, runEngineAction } from "../src/lib/game/actions";
@@ -298,6 +298,15 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   let cold = { ...adult, relations: [{ ...love, bond: 5, affinity: 3 }] };
   for (let i = 0; i < 12 && cold.relations[0].kind === "amour"; i++) cold = { ...cold, relations: weeklyBonds(cold, rng).relations.map((r) => ({ ...r, bond: 5 })) };
   check("liens : une histoire négligée finit en rupture", cold.relations[0].kind === "ex");
+}
+
+// Les langues saisies librement : « mandarin » compte pour le chinois.
+{
+  const spoken = parseLanguages("Anglais, français, Mandarin (courant), Farsi");
+  check("langues : les autres noms sont reconnus", spoken.includes("chinois") && spoken.includes("persan"), spoken.join(", "));
+  check("langues : le mandarin aide en Chine", languageBonus({ ...s.character, spoken }, "156") === 1);
+  const old = normalizeState({ ...s, character: { ...s.character, spoken: ["mandarin", "English"] } } as GameState);
+  check("langues : les anciennes sauvegardes sont corrigées", old.character.spoken.includes("chinois") && old.character.spoken.includes("anglais"));
 }
 
 // Migration d'une sauvegarde v3.

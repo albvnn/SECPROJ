@@ -160,6 +160,53 @@ const COUNTRY_LANGUAGES: Record<string, string[]> = {
 
 export const ALL_LANGUAGES = [...new Set(Object.values(COUNTRY_LANGUAGES).flat())].sort((a, b) => a.localeCompare(b, "fr"));
 
+/** Les autres noms d'une même langue (saisis librement à la création) → le nom utilisé par la carte. */
+const LANGUAGE_ALIASES: Record<string, string> = {
+  mandarin: "chinois", "chinois mandarin": "chinois", cantonais: "chinois", putonghua: "chinois", chinese: "chinois", "chinois simplifie": "chinois",
+  english: "anglais", "anglais americain": "anglais", "anglais britannique": "anglais",
+  french: "français", francais: "français", "francais canadien": "français", quebecois: "français",
+  german: "allemand", deutsch: "allemand", "suisse allemand": "allemand", alsacien: "allemand",
+  spanish: "espagnol", castillan: "espagnol", espanol: "espagnol",
+  italian: "italien", portuguese: "portugais", "portugais bresilien": "portugais", bresilien: "portugais",
+  russian: "russe", ukrainian: "ukrainien", polish: "polonais", dutch: "néerlandais", hollandais: "néerlandais", flamand: "néerlandais", neerlandais: "néerlandais",
+  arabic: "arabe", darija: "arabe", "arabe dialectal": "arabe", "arabe litteraire": "arabe", "arabe egyptien": "arabe", "arabe marocain": "arabe", "arabe levantin": "arabe", libanais: "arabe",
+  farsi: "persan", dari: "persan", iranien: "persan", persian: "persan",
+  pashto: "pachto", pachtou: "pachto", pachtoune: "pachto",
+  hebrew: "hébreu", hebreu: "hébreu", turkish: "turc", greek: "grec",
+  japanese: "japonais", korean: "coréen", coreen: "coréen",
+  hindoustani: "hindi", urdu: "ourdou",
+  tagalog: "filipino", philippin: "filipino",
+  bahasa: "indonésien", "bahasa indonesia": "indonésien", indonesien: "indonésien", "bahasa melayu": "malais",
+  vietnamese: "vietnamien", thai: "thaï", kiswahili: "swahili", azeri: "azéri", georgien: "géorgien",
+  "serbo-croate": "serbe", bosniaque: "serbe", croate: "croate",
+};
+
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/\b(courant|natif|native|maternelle|bilingue|notions? de|bases? en|scolaire|un peu de?|parle)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Le nom canonique d'une langue : « Mandarin (courant) » → « chinois ». */
+export function canonicalLanguage(raw: string): string {
+  const f = fold(raw);
+  if (!f) return "";
+  if (LANGUAGE_ALIASES[f]) return LANGUAGE_ALIASES[f];
+  const known = ALL_LANGUAGES.find((l) => fold(l) === f);
+  return known ?? f;
+}
+
+/** Les langues parlées, sous leur nom canonique et sans doublon. */
+export function canonicalLanguages(list: string[]): string[] {
+  return [...new Set(list.map(canonicalLanguage).filter(Boolean))];
+}
+
+export const speaksLanguage = (c: Pick<Character, "spoken">, lang: string) => (c.spoken ?? []).some((l) => canonicalLanguage(l) === canonicalLanguage(lang));
+
 export function languagesOf(country: string): string[] {
   return COUNTRY_LANGUAGES[country] ?? ["anglais"];
 }
@@ -167,8 +214,7 @@ export function languagesOf(country: string): string[] {
 /** +1 si l'on parle une langue du pays, −1 si on n'en parle aucune (et pas l'anglais quand il y est parlé). */
 export function languageBonus(c: Character, country: string): number {
   const local = languagesOf(country);
-  const spoken = new Set((c.spoken ?? []).map((l) => l.toLowerCase()));
-  if (local.some((l) => spoken.has(l))) return 1;
+  if (local.some((l) => speaksLanguage(c, l))) return 1;
   return -1;
 }
 
