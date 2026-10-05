@@ -620,6 +620,9 @@ export const KIND_LABELS: Record<RelationKind, { label: string; color: string }>
   equipier: { label: "Équipier", color: "var(--pole-esprit)" },
   allie: { label: "Allié", color: "var(--color-success)" },
   contact: { label: "Contact", color: "var(--color-muted)" },
+  ami: { label: "Ami·e", color: "#4fa3a5" },
+  amour: { label: "Amour", color: "#e0607e" },
+  ex: { label: "Ex", color: "#8a7f8f" },
   rival: { label: "Rival", color: "var(--color-partial)" },
   ennemi: { label: "Ennemi", color: "var(--color-fail)" },
 };

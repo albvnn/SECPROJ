@@ -115,7 +115,10 @@ export const UpdateInput = z.object({
       z.object({
         nom: z.string().describe("Nom du personnage (identique d'un tour à l'autre)."),
         role: z.string().optional().describe("Qui il est pour le joueur (ex. « instructrice de tir au Lycée »)."),
-        type: z.enum(["proche", "mentor", "equipier", "allie", "contact", "rival", "ennemi"]).optional(),
+        type: z
+          .enum(["proche", "mentor", "equipier", "allie", "contact", "ami", "amour", "ex", "rival", "ennemi"])
+          .optional()
+          .describe("« amour » : une histoire, seulement entre adultes et si le joueur l'a voulu ; « ex » après une rupture."),
         statut: z
           .enum(["actif", "injoignable", "disparu", "mort", "archive"])
           .optional()
@@ -243,7 +246,7 @@ export const DossierInput = z.object({
       z.object({
         nom: z.string(),
         role: z.string(),
-        type: z.enum(["proche", "mentor", "equipier", "allie", "contact", "rival", "ennemi"]),
+        type: z.enum(["proche", "mentor", "equipier", "allie", "contact", "ami", "ex", "rival", "ennemi"]),
         affinite: z.number().int().min(-100).max(100),
         lieu: z.string().describe("Où cette personne se trouve aujourd'hui."),
         note: z.string(),

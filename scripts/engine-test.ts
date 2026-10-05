@@ -11,6 +11,7 @@ import { eventsBetween } from "../src/lib/world/agenda";
 import type { GameState } from "../src/lib/game/types";
 import { clearance, operativeKnown, operativeListed, threatVisible } from "../src/lib/game/intel";
 import { fileRequest, sourceOffers } from "../src/lib/game/sources";
+import { romancePossible, syncWithRoster, weeklyBonds } from "../src/lib/game/bonds";
 import { bodyMod, bodyStats, bodyWeek, heightAt, initialBody, muscleCap, scarsFrom } from "../src/lib/game/body";
 
 let failures = 0;
@@ -266,6 +267,37 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   check("corps : la carrure aide en force", bodyMod(strong, "force")?.value === 1 && bodyMod(strong, "logique") === null);
   const wk = resolveWeek({ ...base, world: { ...base.world, restUntil: base.world.day } }, defaultPlan(base), rng);
   check("corps : la semaine fait évoluer le corps", wk.state.character.body?.prev !== undefined);
+}
+
+// Les liens vivent.
+{
+  const base = { ...s, character: { ...s.character, prison: null } };
+  const mate = base.roster.find((o) => o.agency === base.character.identity.agency && o.role === "cadet")!;
+  // Le narrateur enregistre une camarade de chambrée : elle est reliée à l'effectif.
+  let t = applyUpdate(base, { relations: [{ nom: mate.name, role: "camarade de chambrée", type: "ami", affinite: 50 }] }).state;
+  const rel = t.relations.find((r) => r.name === mate.name)!;
+  check("liens : une camarade est reliée à l'effectif", rel.operativeId === mate.id && (rel.history?.length ?? 0) === 1);
+  // Elle reçoit son Brevet : sa fiche suit.
+  const after = t.roster.map((o) => (o.id === mate.id ? { ...o, role: "officier" as const, rank: "agent" as const, station: "lisbonne", cityId: "lisbonne" } : o));
+  const sync = syncWithRoster(t.relations, t.roster, after, t.world.day);
+  const synced = sync.relations.find((r) => r.name === mate.name)!;
+  check("liens : sa mutation est reportée sur sa fiche", /Station/.test(synced.role) && synced.cityId === "lisbonne" && sync.notices.length === 1, synced.role);
+  // L'amitié mûrit.
+  const friend = { name: "Léa Martin", role: "voisine", kind: "contact" as const, status: "actif" as const, affinity: 60, favors: 0, location: "Lyon", knows: "", notes: "", lastSeenDay: t.world.day, bond: 80, metDay: t.world.day - 40, history: [{ day: t.world.day - 40, text: "Rencontre" }] };
+  const grown = weeklyBonds({ ...t, relations: [friend] }, rng).relations[0];
+  check("liens : un contact attentif devient ami", grown.kind === "ami" && grown.history!.length === 2);
+  // Une histoire : seulement entre adultes.
+  const minor = { ...t, character: { ...t.character, identity: { ...t.character.identity, birthDate: undefined, age: 16 } }, world: { ...t.world, day: 0 } };
+  const refused = applyUpdate(minor, { relations: [{ nom: "Léa Martin", type: "amour", affinite: 80 }] });
+  check("liens : pas d'histoire d'amour avant 18 ans", refused.state.relations.every((r) => r.kind !== "amour") && refused.rejected.some((x) => /18 ans/.test(x)));
+  const adult = { ...t, relations: [{ ...friend, kind: "ami" as const, affinity: 80, bond: 80 }] };
+  check("liens : l'étincelle n'apparaît qu'entre adultes très proches", romancePossible(adult, adult.relations[0], 19) && !romancePossible(adult, adult.relations[0], 16));
+  const love = applyUpdate(adult, { relations: [{ nom: "Léa Martin", type: "amour" }] }).state.relations[0];
+  check("liens : le narrateur peut enregistrer l'histoire, datée", love.kind === "amour" && /histoire commence/.test(love.history!.at(-1)!.text));
+  // Une histoire négligée finit par se briser.
+  let cold = { ...adult, relations: [{ ...love, bond: 5, affinity: 3 }] };
+  for (let i = 0; i < 12 && cold.relations[0].kind === "amour"; i++) cold = { ...cold, relations: weeklyBonds(cold, rng).relations.map((r) => ({ ...r, bond: 5 })) };
+  check("liens : une histoire négligée finit en rupture", cold.relations[0].kind === "ex");
 }
 
 // Migration d'une sauvegarde v3.

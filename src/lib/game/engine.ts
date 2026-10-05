@@ -60,6 +60,19 @@ import { commandOnPromotion, emptyCommand } from "./command";
 import { injuryMalus } from "./field";
 import { bodyMod, initialBody } from "./body";
 import { pushLedger } from "./ledger";
+import { findOperative, romanceAllowed, withHistory } from "./bonds";
+
+const KIND_STEP: Partial<Record<RelationKind, (n: string) => string>> = {
+  ami: (n) => `${n} devient un·e ami·e`,
+  proche: (n) => `${n} devient un·e proche`,
+  amour: (n) => `${n} et toi : une histoire commence`,
+  ex: (n) => `Rupture avec ${n}`,
+  rival: (n) => `${n} devient un·e rival·e`,
+  ennemi: (n) => `${n} devient un·e ennemi·e`,
+  allie: (n) => `${n} devient un·e allié·e`,
+  mentor: (n) => `${n} devient ton mentor`,
+  equipier: (n) => `${n} devient ton équipier·e`,
+};
 import { clearanceDef, clearanceOf } from "./intel";
 import { generateRoster } from "./roster";
 import { findCity, findCountryByName, matchCity, CITIES as MAP_CITIES } from "@/lib/world/geo";
@@ -340,6 +353,8 @@ export function normalizeState(s: GameState): GameState {
       lastSeenDay: r.lastSeenDay ?? 0,
       bond: r.bond ?? 60,
       ...(r.cityId ? {} : matchCity(r.location) ? { cityId: matchCity(r.location)!.id, positionDay: r.lastSeenDay ?? 0 } : {}),
+      operativeId: r.operativeId ?? findOperative(s.roster ?? [], r.name)?.id,
+      history: r.history ?? [],
     })),
     progress: s.progress ?? [],
     pieces: s.pieces ?? [],
@@ -969,6 +984,14 @@ export function applyUpdate(
 
   for (const r of (u.relations ?? []).slice(0, 6)) {
     const i = relations.findIndex((x) => sameName(x.name, r.nom));
+    // Une histoire d'amour : entre adultes seulement.
+    if (r.type === "amour") {
+      const blocked = romanceAllowed(state, i >= 0 ? relations[i] : { name: r.nom }, ageNow());
+      if (blocked) {
+        rejected.push(`relation « ${r.nom} » : ${blocked}`);
+        r.type = i >= 0 ? relations[i].kind : "proche";
+      }
+    }
     const raw = Math.round(r.affinite ?? 0);
     if (i < 0) {
       if (activeRelations(relations) >= RELATION_LIMIT && r.statut !== "archive") {
@@ -991,6 +1014,9 @@ export function applyUpdate(
         bond: r.type === "rival" || r.type === "ennemi" ? 50 : 60,
         knownAs: r.connait_sous?.slice(0, 60) ?? "reel",
         ...(matchCity(r.lieu) ? { cityId: matchCity(r.lieu)!.id, positionDay: w.day } : {}),
+        operativeId: findOperative(state.roster, r.nom)?.id,
+        metDay: w.day,
+        history: [{ day: w.day, text: `Rencontre${r.role ? ` : ${r.role.slice(0, 80)}` : ""}` }],
       });
       notices.push(`Nouvelle relation : ${r.nom}`);
     } else {
@@ -1017,6 +1043,15 @@ export function applyUpdate(
       if (favors !== prev.favors)
         notices.push(favors > prev.favors ? `${prev.name} te doit une faveur` : `Tu dois une faveur à ${prev.name}`);
       if (r.statut && r.statut !== prev.status) notices.push(`${prev.name} : ${r.statut}`);
+      // L'historique garde les grandes étapes.
+      let h = relations[i];
+      if (r.type && r.type !== prev.kind) {
+        h = withHistory(h, w.day, KIND_STEP[r.type]?.(prev.name) ?? `${prev.name} : ${r.type}`);
+        if (r.type === "amour" || r.type === "ex") notices.push(r.type === "amour" ? `${prev.name} et toi : une histoire commence` : `${prev.name} et toi : c'est fini`);
+      }
+      if (r.role && r.role !== prev.role) h = withHistory(h, w.day, `${prev.name} : ${r.role.slice(0, 80)}`);
+      if (r.statut && r.statut !== prev.status && r.statut !== "archive") h = withHistory(h, w.day, `${prev.name} : ${r.statut}`);
+      relations[i] = h;
     }
   }
 

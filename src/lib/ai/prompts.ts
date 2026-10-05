@@ -35,6 +35,7 @@ import { threatsSummary } from "@/lib/world/threats";
 import { clearance, clearanceDef, threatVisible } from "@/lib/game/intel";
 import { findPossession } from "@/lib/game/economy";
 import { bodyLine } from "@/lib/game/body";
+import { romancePossible } from "@/lib/game/bonds";
 import { daysBetween, formatDate } from "@/lib/game/calendar";
 import type { GameState, LogEntry, PhaseId, PlayerAction } from "@/lib/game/types";
 
@@ -189,12 +190,15 @@ function worldBlock(state: GameState): string {
 function relationsBlock(state: GameState): string {
   const active = state.relations.filter((r) => r.status !== "archive");
   if (!active.length) return "Aucune pour l'instant.";
+  const age = currentAge(state);
   return active
     .map(
       (r) =>
-        `- ${r.name} — ${r.role} [${r.kind}, ${r.status}] — affinité ${r.affinity}${
+        `- ${r.name} — ${r.role} [${r.kind}, ${r.status}${r.operativeId ? ", membre de l'effectif" : ""}] — affinité ${r.affinity}${
           r.favors ? ` — ${r.favors > 0 ? `te doit ${r.favors} faveur(s)` : `tu lui dois ${-r.favors} faveur(s)`}` : ""
-        }${r.location ? ` — joignable : ${r.location}` : ""}${r.knows ? ` — sait : ${r.knows}` : ""}${r.notes ? ` — ${r.notes}` : ""} (lien ${r.bond ?? 50}/100${(r.bond ?? 50) < 25 ? ", SE SENT NÉGLIGÉ" : ""} ; dernier échange : jour ${r.lastSeenDay})`,
+        }${r.location ? ` — joignable : ${r.location}` : ""}${r.knows ? ` — sait : ${r.knows}` : ""}${r.notes ? ` — ${r.notes}` : ""} (lien ${r.bond ?? 50}/100${(r.bond ?? 50) < 25 ? ", SE SENT NÉGLIGÉ" : ""} ; dernier échange : jour ${r.lastSeenDay})${
+          r.history?.length ? ` — étapes : ${r.history.slice(-3).map((h) => `J${h.day} ${h.text}`).join(" ; ")}` : ""
+        }${romancePossible(state, r, age) ? " — ÉTINCELLE : une histoire est possible si le joueur fait le premier pas" : ""}`,
     )
     .join("\n");
 }
