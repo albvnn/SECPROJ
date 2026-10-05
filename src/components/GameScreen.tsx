@@ -496,7 +496,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
               )}
               {tab === "archives" && (
                 <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                  <Archives state={state} focus={archiveFocus} />
+                  <Archives state={state} focus={archiveFocus} onChange={busy ? undefined : commit} />
                 </div>
               )}
               {tab === "agence" && (

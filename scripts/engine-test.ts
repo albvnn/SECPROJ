@@ -13,6 +13,8 @@ import type { GameState } from "../src/lib/game/types";
 import { clearance, operativeKnown, operativeListed, threatVisible } from "../src/lib/game/intel";
 import { fileRequest, sourceOffers } from "../src/lib/game/sources";
 import { currentPost, postOf } from "../src/lib/game/post";
+import { buyers, knowledgeBase, tradeInfo } from "../src/lib/game/knowledgebase";
+import { analysisBranch } from "../src/lib/game/sources";
 import { romancePossible, syncWithRoster, weeklyBonds } from "../src/lib/game/bonds";
 import { bodyMod, bodyStats, bodyWeek, heightAt, initialBody, muscleCap, scarsFrom } from "../src/lib/game/body";
 
@@ -104,8 +106,8 @@ check("légende créée", s.character.legends.length === 1, s.character.legends.
 check("estime des Passeurs", (s.command.branchFavor.passeurs ?? 0) > 0);
 
 // Le siège : un banc vacant, du mérite, trois missions.
-const victim = s.roster.find((o) => o.agency === "argos" && o.seat === "orphee")!;
-s = { ...s, roster: s.roster.map((o) => (o.id === victim.id ? { ...o, status: "mort" as const } : o)), character: { ...s.character, merit: 10 }, world: { ...s.world, missionsCompleted: 3 } };
+// (Le banc a pu changer de titulaire pendant les semaines simulées : on le libère pour de bon.)
+s = { ...s, roster: s.roster.map((o) => (o.agency === "argos" && o.seat === "orphee" ? { ...o, status: "mort" as const } : o)), character: { ...s.character, merit: 10 }, world: { ...s.world, missionsCompleted: 3 } };
 check("un banc libre", freeSeats(s).some((x) => x.id === "orphee"));
 check("titulaire possible", promotionsAvailable(s).includes("titulaire"), rankMissing(s, "titulaire").join(" ; "));
 s = promote(s, "titulaire", { seat: "orphee" }).state;
@@ -287,7 +289,7 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   // L'amitié mûrit.
   const friend = { name: "Léa Martin", role: "voisine", kind: "contact" as const, status: "actif" as const, affinity: 60, favors: 0, location: "Lyon", knows: "", notes: "", lastSeenDay: t.world.day, bond: 80, metDay: t.world.day - 40, history: [{ day: t.world.day - 40, text: "Rencontre" }] };
   const grown = weeklyBonds({ ...t, relations: [friend] }, rng).relations[0];
-  check("liens : un contact attentif devient ami", grown.kind === "ami" && grown.history!.length === 2);
+  check("liens : un contact attentif devient ami", grown.kind === "ami" && grown.history!.some((h) => /ami/.test(h.text)));
   // Une histoire : seulement entre adultes.
   const minor = { ...t, character: { ...t.character, identity: { ...t.character.identity, birthDate: undefined, age: 16 } }, world: { ...t.world, day: 0 } };
   const refused = applyUpdate(minor, { relations: [{ nom: "Léa Martin", type: "amour", affinite: 80 }] });
@@ -341,6 +343,37 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   check("poste : les négliger ne rapporte rien et coûte en réputation", (lazy.post?.points ?? 0) === 0 && lazy.character.reputation <= base.character.reputation);
   const holder = { ...base, character: { ...base.character, rank: "titulaire" as const } };
   check("poste : changer de grade, c'est changer de poste", postOf(holder)?.id === "titulaire" && currentPost({ ...holder, post: good.post })!.points === 0);
+}
+
+// La base de connaissance : verser, offrir, échanger, vendre.
+{
+  const day = s.world.day;
+  const base = {
+    ...s,
+    character: { ...s.character, prison: null, rank: "agent" as const, blames: 0, reputation: 50 },
+    pieces: [{ type: "lettre" as const, titre: "Rapport — Europe de l'Ouest", de: "Le Libraire", contenu: "…", day, topic: "region" as const, grade: "B-2" }],
+    missionLog: [{ id: "m1", name: "Opération Test", kind: "standard" as const, importance: "continentale" as const, result: "reussite" as const, city: "Lyon", country: "France", region: "europe", faction: "x", target: "y", objective: "z", cover: "c", team: [], startDay: day - 20, endDay: day - 10, steps: [], report: [], exposure: 0 }],
+    relations: [{ name: "Léa Martin", role: "journaliste", kind: "ami" as const, status: "actif" as const, affinity: 40, favors: 0, location: "Lyon", knows: "", notes: "", lastSeenDay: day, bond: 70 }],
+  } as GameState;
+  const kb = knowledgeBase(base);
+  const report = kb.find((x) => x.origin === "rapport")!;
+  const op = kb.find((x) => x.origin === "operation")!;
+  check("savoir : rapports et dossiers d'opération ont une valeur", report?.value === 4 && op?.sensitive === true && op.value === 4);
+  const favorBefore = base.command.branchFavor[analysisBranch(base).id] ?? 0;
+  const toAgency = tradeInfo(base, report.id, "agence", "agence", rng).state;
+  check("savoir : verser au dossier fait monter l'estime", (toAgency.command.branchFavor[analysisBranch(base).id] ?? 0) > favorBefore);
+  const toFriend = tradeInfo(base, report.id, "lien", "Léa Martin", rng).state;
+  check("savoir : offrir à un lien, il te doit une faveur", toFriend.relations[0].favors === 1);
+  const sold = tradeInfo(base, report.id, "courtier", "libraire", rng).state;
+  check("savoir : vendre à un courtier rapporte, inscrit au relevé", sold.character.money > base.character.money && sold.character.ledger!.at(-1)!.amount > 0);
+  let twice = false;
+  try {
+    tradeInfo(sold, report.id, "courtier", "libraire", rng);
+  } catch {
+    twice = true;
+  }
+  check("savoir : on ne vend pas deux fois la même chose au même", twice);
+  check("savoir : un dossier d'opération ne se verse pas (il y est déjà)", !buyers(base, op).some((b) => b.kind === "agence"));
 }
 
 // Le rythme : plusieurs semaines d'affilée, avec des arrêts sur ce qui compte.

@@ -88,8 +88,8 @@ export function WeekSlots({
           />
         ))}
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className={`min-w-0 flex-1 text-xs ${error ? "text-fail" : "text-muted"}`}>
+      <div className="mt-4 space-y-2">
+        <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>
           {error ??
             (span === "auto"
               ? "Le temps file avec ce planning et s'arrête de lui-même sur ce qui compte."
@@ -98,7 +98,7 @@ export function WeekSlots({
                 : "Sept jours passent, le narrateur raconte. Un événement peut survenir.")}
         </p>
         {onPlay && (
-          <span className="flex flex-wrap items-center gap-2">
+          <span className="flex flex-wrap items-center justify-end gap-2">
             {!state.character.prison && <SpanPicker value={span} onChange={onSpan} disabled={busy} />}
             <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
               {playLabel(state.character.prison ? 1 : span)}

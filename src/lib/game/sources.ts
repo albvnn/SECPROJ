@@ -185,7 +185,7 @@ function superior(state: GameState): string {
   return "ton Contrôleur";
 }
 
-const analysisBranch = (state: GameState) => AGENCIES[state.character.identity.agency].branches.find((b) => b.kind === "analyse")!;
+export const analysisBranch = (state: GameState) => AGENCIES[state.character.identity.agency].branches.find((b) => b.kind === "analyse")!;
 const busy = (state: GameState, source: SourceKind, ref?: string) => state.knowledge.requests.some((r) => r.source === source && (ref === undefined || r.sourceRef === ref));
 
 /** Combien de questions la Branche d'analyse traite pour toi en même temps. */

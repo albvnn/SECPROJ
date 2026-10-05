@@ -1006,6 +1006,26 @@ export interface Knowledge {
   requests: IntelRequest[];
   /** Agences rivales dont on a percé le Cercle. */
   circles: AgencyId[];
+  /** Ce que tu as obtenu en échange d'autres informations. */
+  acquired?: InfoItem[];
+  /** À qui chaque information a déjà été cédée. */
+  traded?: Record<string, string[]>;
+}
+
+/** Une information que tu détiens : elle a une valeur, elle vieillit, et elle peut se monnayer. */
+export interface InfoItem {
+  id: string;
+  title: string;
+  /** D'où elle vient. */
+  origin: "rapport" | "operation" | "faction" | "piece" | "echange";
+  /** Sur quoi elle porte (pour les écrans). */
+  about: string;
+  region?: string;
+  /** 1 (rumeur) à 5 (secret d'État). */
+  value: number;
+  day: number;
+  /** Secret de ton agence : la céder à l'extérieur, c'est trahir. */
+  sensitive: boolean;
 }
 
 export interface GameState {
