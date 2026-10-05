@@ -3,17 +3,17 @@
  * Puis le temps passe, le monde bouge, les liens s'usent, les devoirs tombent.
  */
 import { AGENCIES, findBranch, findSeat } from "./agencies";
-import { applyUpdate, currentAge, currentDate, dateOfAge, gainSkillXp, promotionsAvailable, recordProgress } from "./engine";
+import { RELATION_LIMIT, applyUpdate, currentAge, currentDate, dateOfAge, gainSkillXp, promotionsAvailable, recordProgress, skillTotal } from "./engine";
 import { delegateChance, refreshOffers } from "./missions";
 import { randomName } from "./names";
 import { chance, pick, randInt, uid, type Rng } from "./rng";
 import { isAvailable, OPERATIVE_TRAITS, recruitOperative } from "./roster";
 import { MISSION_IMPORTANCE, RANKS, SKILLS, can, missionMerit, type Capability } from "./rules";
 import type { ActivityChoice, ActivityId, Asset, Duty, GameState, Operative, RankId, Relation, SkillId, WeekReport } from "./types";
-import { CITIES, findCity, findCountry, matchCity } from "@/lib/world/geo";
+import { CITIES, REGIONS, findCity, findCountry, matchCity, type RegionId } from "@/lib/world/geo";
 import { GADGETS } from "./gadgets";
 import { branchFavor, monthlyCommand, shiftBranchFavor } from "./command";
-import { ALL_LANGUAGES, LEGEND_COST, coolHeat, createLegend, healInjuries, legendCap, speaksLanguage } from "./field";
+import { ALL_LANGUAGES, LEGEND_COST, coolHeat, createLegend, healInjuries, inflictInjury, legendCap, speaksLanguage } from "./field";
 import { findPossession, payUpkeep } from "./economy";
 import { addDays } from "./calendar";
 import { weeklyAgenda } from "@/lib/world/agenda";
@@ -33,7 +33,9 @@ export interface ActivityDef {
   label: string;
   icon: string;
   description: string;
-  target?: "skill" | "relation" | "duty" | "city" | "academic" | "agency" | "branch" | "language" | "legend";
+  target?: "skill" | "relation" | "duty" | "city" | "academic" | "agency" | "branch" | "language" | "legend" | "choice" | "region";
+  /** Les variantes, pour les activités à choix. */
+  options?: { id: string; label: string; hint: string }[];
   /** Réservé à la détention. */
   prison?: boolean;
   /** Ce que le grade doit permettre. */
@@ -69,6 +71,63 @@ export const ACTIVITIES: Record<ActivityId, ActivityDef> = {
   resister: { label: "Résister", icon: "✊", description: "Tenir face aux interrogatoires (Sang-froid). Céder, c'est livrer des secrets de l'agence.", prison: true },
   evasion: { label: "Évasion", icon: "⛓", description: "Préparer ton évasion (Ombre, Doigté ou Athlétisme). Risqué, mais c'est toi qui décides.", prison: true },
   attendre: { label: "Attendre l'échange", icon: "⌛", description: "Compter sur ton agence et le Conseil des Trois pour négocier ta libération.", prison: true },
+  sport: {
+    label: "Sport",
+    icon: "◇",
+    description: "Salle, piste ou ring : le corps se construit (musculature, masse grasse) et une compétence physique progresse. Fatigant, mais bon pour le moral.",
+    target: "choice",
+    options: [
+      { id: "muscu", label: "Musculation", hint: "Force +1 xp · muscles" },
+      { id: "cardio", label: "Course et natation", hint: "Endurance +1 xp · masse grasse" },
+      { id: "boxe", label: "Boxe et krav-maga", hint: "Combat +1 xp · gare aux coups" },
+    ],
+  },
+  exercice: {
+    label: "Exercice de terrain",
+    icon: "◎",
+    description: "Un scénario grandeur nature dans une vraie ville : deux compétences de terrain progressent ensemble.",
+    target: "choice",
+    options: [
+      { id: "filature", label: "Filature", hint: "Ombre · Regard" },
+      { id: "infiltration", label: "Infiltration", hint: "Ombre · Doigté" },
+      { id: "interrogatoire", label: "Interrogatoire", hint: "Empathie · Sang-froid" },
+      { id: "conduite", label: "Conduite d'évasion", hint: "Pilotage · Vivacité" },
+      { id: "tir", label: "Tir de précision", hint: "Précision · Alerte" },
+    ],
+  },
+  veille: {
+    label: "Veille",
+    icon: "▤",
+    description: "Lire les dépêches, les rapports et la presse locale d'une région : tu la suis pendant six mois (menaces, tensions), et ton analyse s'aiguise.",
+    target: "region",
+    officer: true,
+  },
+  job: {
+    label: "Petit boulot",
+    icon: "€",
+    description: "Un vrai travail pour ta vie officielle : un peu d'argent, et une couverture qui tient (couverture +10).",
+  },
+  soins: {
+    label: "Soins",
+    icon: "✚",
+    description: "Kiné, médecin de l'agence : les blessures guérissent une semaine plus vite, santé +2 (150 € hors Académie).",
+  },
+  mondanites: {
+    label: "Mondanités",
+    icon: "♢",
+    description: "Vernissages, dîners, réceptions : on s'y fait des contacts (parfois un nouveau lien), on y soigne sa réputation et sa couverture. 150 € hors Académie.",
+  },
+  profil_bas: {
+    label: "Profil bas",
+    icon: "◌",
+    description: "Changer d'habitudes, de téléphone, de trajets : les services qui te surveillent perdent ta trace (notoriété −12 dans les deux pays où tu es le plus fiché).",
+    officer: true,
+  },
+  instruire: {
+    label: "Instruire",
+    icon: "✦",
+    description: "Former les cadets de l'Académie : réputation +3, et enseigner t'oblige à revoir tes bases (Tactique).",
+  },
 };
 
 export const ACTIVITY_IDS = Object.keys(ACTIVITIES) as ActivityId[];
@@ -91,6 +150,10 @@ export function activityBlocker(state: GameState, id: ActivityId): string | null
   if (id === "theatre" && !state.command.theatre) return "tu ne supervises pas de région";
   if (id === "devoir" && !state.duties.some((d) => d.status === "ouvert" && d.activity === "devoir")) return "aucun devoir à rédiger";
   if (id === "relation" && !activeRelations(state).length) return "personne à voir";
+  if (id === "soins" && !(state.character.injuries ?? []).some((i) => i.healDay !== undefined) && state.character.health >= state.character.healthMax) return "rien à soigner";
+  if (id === "profil_bas" && !Object.values(state.character.heat ?? {}).some((v) => v > 0)) return "personne ne te cherche";
+  if (id === "instruire" && RANKS[state.character.rank].order < RANKS.titulaire.order) return "à partir de Titulaire ou Chef de station";
+  if ((id === "soins" || id === "mondanites") && !cadet && state.character.money < 150) return "il faut 150 €";
   return null;
 }
 
@@ -116,6 +179,8 @@ export function planError(state: GameState, plan: ActivityChoice[]): string | nu
     if (def.target === "duty" && !state.duties.some((d) => d.id === p.target && d.status === "ouvert")) return `${def.label} : choisis un devoir.`;
     if (def.target === "language" && !(p.target && ALL_LANGUAGES.includes(p.target))) return `${def.label} : choisis une langue.`;
     if (def.target === "branch" && !p.target) return `${def.label} : choisis une Branche.`;
+    if (def.target === "choice" && !def.options?.some((o) => o.id === p.target)) return `${def.label} : choisis une variante.`;
+    if (def.target === "region" && !(p.target && p.target in REGIONS)) return `${def.label} : choisis une région.`;
   }
   if (isCadet(state) && !state.character.prison && !plan.some((p) => p.activity === "cours")) return "À l'Académie, au moins un créneau de cours par semaine est obligatoire.";
   return null;
@@ -254,6 +319,20 @@ export interface WeekResult {
   report: WeekReport;
   notices: string[];
 }
+
+/** Ce qu'on rencontre dans les réceptions. */
+const SOCIAL_ROLES = [
+  "attaché culturel d'une ambassade",
+  "journaliste économique",
+  "avocate d'affaires",
+  "galeriste",
+  "chirurgien réputé",
+  "banquier privé",
+  "ingénieure en télécoms",
+  "conseiller d'un ministre",
+  "photographe de mode",
+  "héritière d'un armateur",
+];
 
 /** Combien de temps faire passer : un nombre de semaines, ou « jusqu'au prochain événement » (8 semaines au plus). */
 export type Span = number | "auto";
@@ -486,6 +565,114 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
           lines.push(`Nouvelle légende : ${legend.name}, ${legend.profession} (${legend.nationality}), crédibilité ${credibility}.`);
           notices.push(`Nouvelle légende : ${legend.name}`);
         }
+        break;
+      }
+      case "sport": {
+        const skill: SkillId = slot.target === "cardio" ? "endurance" : slot.target === "boxe" ? "combat" : "force";
+        learn(skill, 1);
+        fatigue += 10;
+        state = { ...state, character: { ...state.character, morale: Math.min(state.character.moraleMax, state.character.morale + 1) } };
+        const opt = ACTIVITIES.sport.options!.find((o) => o.id === slot.target);
+        lines.push(`Sport : ${opt?.label ?? "entraînement"} (${SKILLS[skill].label} +1, moral +1).`);
+        if (slot.target === "boxe" && chance(0.06, rng)) {
+          const hurt = inflictInjury(state.character, "combat", 1, state.world.day, false, rng);
+          state = { ...state, character: hurt.character };
+          notices.push(hurt.notice);
+          lines.push(`Un coup mal paré au ring : ${hurt.notice.replace(/^Blessure : /, "").toLowerCase()}.`);
+        }
+        break;
+      }
+      case "exercice": {
+        const pairs: Record<string, [SkillId, SkillId]> = {
+          filature: ["ombre", "regard"],
+          infiltration: ["ombre", "doigte"],
+          interrogatoire: ["empathie", "sangfroid"],
+          conduite: ["pilotage", "vivacite"],
+          tir: ["precision", "alerte"],
+        };
+        const [a, b] = pairs[slot.target ?? "filature"] ?? pairs.filature;
+        learn(a, 1);
+        learn(b, 1);
+        fatigue += 10;
+        const opt = ACTIVITIES.exercice.options!.find((o) => o.id === slot.target);
+        lines.push(`Exercice de terrain : ${opt?.label ?? "scénario"} (${SKILLS[a].label} et ${SKILLS[b].label} +1).`);
+        break;
+      }
+      case "veille": {
+        const region = slot.target as RegionId;
+        learn("logique", 1);
+        fatigue += 4;
+        state = { ...state, knowledge: { ...state.knowledge, regions: { ...state.knowledge.regions, [region]: state.world.day } } };
+        lines.push(`Veille : ${REGIONS[region]?.label ?? region} suivie six mois (Logique +1).`);
+        break;
+      }
+      case "job": {
+        const best = Math.max(skillTotal(c, "eloquence"), skillTotal(c, "tenue"), skillTotal(c, "machine"));
+        const pay = cadet ? 60 : 180 + 35 * best;
+        cover += 10;
+        fatigue += 8;
+        state = { ...state, character: { ...state.character, money: state.character.money + pay, ledger: pushLedger(state.character.ledger, state.world.day, cadet ? "Petits services à l'Académie" : "Petit boulot", pay) } };
+        lines.push(`Petit boulot : +${pay} €, couverture +10.`);
+        break;
+      }
+      case "soins": {
+        const cost = cadet ? 0 : 150;
+        state = {
+          ...state,
+          character: {
+            ...state.character,
+            health: Math.min(state.character.healthMax, state.character.health + 2),
+            injuries: state.character.injuries.map((i) => (i.healDay !== undefined ? { ...i, healDay: i.healDay - 7 } : i)),
+            money: state.character.money - cost,
+            ledger: cost ? pushLedger(state.character.ledger, state.world.day, "Soins", -cost) : state.character.ledger,
+          },
+        };
+        fatigue -= 10;
+        lines.push(`Soins : santé +2, blessures plus vite guéries${cost ? ` (−${cost} €)` : ""}.`);
+        break;
+      }
+      case "mondanites": {
+        const cost = cadet ? 0 : 150;
+        const city = findCity(state.world.cityId);
+        learn("eloquence", 1);
+        cover += 5;
+        let ch = { ...state.character, morale: Math.min(state.character.moraleMax, state.character.morale + 1), money: state.character.money - cost, ledger: cost ? pushLedger(state.character.ledger, state.world.day, "Mondanités", -cost) : state.character.ledger };
+        let relations = state.relations;
+        if (city && activeRelations(state).length < RELATION_LIMIT && chance(0.35, rng)) {
+          const gender = chance(0.5, rng) ? "fille" : "garcon";
+          const n = randomName(findCountry(city.country)?.name ?? "France", gender, rng);
+          const role = pick(SOCIAL_ROLES, rng);
+          const name = `${n.first} ${n.last}`;
+          relations = [
+            ...relations,
+            { name, role, kind: "contact", status: "actif", affinity: 20, favors: 0, location: city.name, knows: "", notes: "", lastSeenDay: state.world.day, bond: 55, cityId: city.id, positionDay: state.world.day, knownAs: "reel", metDay: state.world.day, history: [{ day: state.world.day, text: `Rencontre lors d'une réception : ${role}` }] },
+          ];
+          notices.push(`Nouvelle relation : ${name}`);
+          lines.push(`Mondanités : rencontre avec ${name}, ${role}.`);
+        } else {
+          ch = { ...ch, reputation: Math.min(100, ch.reputation + 1) };
+          lines.push(`Mondanités : on t'a vu, on se souvient de toi (réputation +1${cost ? `, −${cost} €` : ""}).`);
+        }
+        state = { ...state, character: ch, relations };
+        break;
+      }
+      case "profil_bas": {
+        const hottest = Object.entries(c.heat ?? {})
+          .filter(([, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2);
+        const heat = { ...state.character.heat };
+        for (const [k, v] of hottest) heat[k] = Math.max(0, v - 12);
+        cover += 5;
+        state = { ...state, character: { ...state.character, heat } };
+        lines.push(`Profil bas : ${hottest.map(([k]) => findCountry(k)?.name ?? k).join(" et ")} perdent ta trace (notoriété −12).`);
+        break;
+      }
+      case "instruire": {
+        learn("tactique", 1);
+        fatigue += 6;
+        state = { ...state, character: { ...state.character, reputation: Math.min(100, state.character.reputation + 3), morale: Math.min(state.character.moraleMax, state.character.morale + 1) } };
+        lines.push("Instruire : une promotion de cadets t'écoute (réputation +3, Tactique +1).");
         break;
       }
       case "resister": {

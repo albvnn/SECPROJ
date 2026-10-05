@@ -11,7 +11,8 @@ import { ATTRIBUTE_IDS, ATTRIBUTES, RANKS, SKILLS, formatEuros, skillsOf } from 
 import type { ActivityChoice, ActivityId, AgencyId, GameState, SkillId } from "@/lib/game/types";
 import { formatDate } from "@/lib/game/calendar";
 import { upcoming } from "@/lib/world/agenda";
-import { CITIES, findCity, findCountry } from "@/lib/world/geo";
+import { CITIES, REGION_IDS, REGIONS, findCity, findCountry } from "@/lib/world/geo";
+import { knownRegions, regionOfCity } from "@/lib/game/intel";
 
 /** Planning d'une semaine : trois créneaux, puis le moteur fait passer sept jours. */
 export type Span = number | "auto";
@@ -205,6 +206,10 @@ function defaultTarget(state: GameState, a: ActivityId): string | undefined {
       return Object.keys(c.learning ?? {})[0] ?? ALL_LANGUAGES.find((l) => !speaksLanguage(c, l));
     case "legend":
       return c.legends.length >= legendCap(c) ? c.legends[0]?.id : undefined;
+    case "choice":
+      return d.options?.[0]?.id;
+    case "region":
+      return regionOfCity(c.station ?? state.world.cityId) ?? "europe";
     default:
       return undefined;
   }
@@ -230,12 +235,20 @@ const SHORT: Record<ActivityId, string> = {
   resister: "Sang-froid face aux aveux",
   evasion: "Préparer l'évasion",
   attendre: "Compter sur l'échange",
+  sport: "Corps · compétence physique +1 · moral +1",
+  exercice: "Deux compétences de terrain +1",
+  veille: "Une région suivie six mois",
+  job: "Argent · couverture +10",
+  soins: "Guérison plus rapide · santé +2",
+  mondanites: "Un contact, ou réputation +1",
+  profil_bas: "Notoriété −12 dans deux pays",
+  instruire: "Réputation +3 · Tactique +1",
 };
 
 const GROUPS: { label: string; ids: ActivityId[] }[] = [
-  { label: "Toi", ids: ["entrainement", "cours", "langue", "repos", "loisirs"] },
-  { label: "Ta vie", ids: ["relation", "couverture", "devoir"] },
-  { label: "Le métier", ids: ["branche", "legende", "informateurs", "escouade", "antenne", "theatre", "agence"] },
+  { label: "Toi", ids: ["entrainement", "sport", "exercice", "cours", "langue", "repos", "soins", "loisirs"] },
+  { label: "Ta vie", ids: ["relation", "mondanites", "couverture", "job", "devoir"] },
+  { label: "Le métier", ids: ["veille", "profil_bas", "branche", "legende", "informateurs", "escouade", "antenne", "theatre", "agence", "instruire"] },
   { label: "Détention", ids: ["resister", "evasion", "attendre"] },
 ];
 
@@ -330,6 +343,36 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
   const set = (target: string) => onChange({ ...slot, ...(target ? { target } : { target: undefined }) });
+  if (def.target === "choice" && def.options) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {def.options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => set(o.id)}
+            title={o.hint}
+            className={`rounded-sm border px-2 py-1 text-left text-[11px] transition-colors ${slot.target === o.id ? "border-brass bg-brass/15 text-brass-soft" : "border-line text-muted hover:border-line-strong hover:text-ivory"}`}
+          >
+            {o.label}
+            <span className="block text-[9px] text-faint">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (def.target === "region") {
+    const watched = knownRegions(state);
+    return (
+      <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        {REGION_IDS.map((r) => (
+          <option key={r} value={r}>
+            {REGIONS[r].label}
+            {watched.has(r) ? " · déjà suivie" : ""}
+          </option>
+        ))}
+      </select>
+    );
+  }
   if (def.target === "skill" || def.target === "academic") {
     const seatSkills = new Set(findSeat(c.identity.agency, c.seat)?.specialty ?? []);
     return (

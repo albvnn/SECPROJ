@@ -820,7 +820,15 @@ export type ActivityId =
   | "legende"
   | "resister"
   | "evasion"
-  | "attendre";
+  | "attendre"
+  | "sport"
+  | "exercice"
+  | "veille"
+  | "job"
+  | "soins"
+  | "mondanites"
+  | "profil_bas"
+  | "instruire";
 
 export interface ActivityChoice {
   activity: ActivityId;

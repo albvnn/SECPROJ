@@ -110,17 +110,20 @@ const PHYSICAL = new Set(["corps", "geste"]);
 export function bodyWeek(c: Character, plan: ActivityChoice[], opts: { prison: boolean; fatigue: number }): { body: Body; notices: string[] } {
   const body = c.body ?? initialBody(c);
   const physical = plan.filter(
-    (p) => (p.activity === "entrainement" && p.target && PHYSICAL.has(SKILLS[p.target as SkillId]?.attribute ?? "")) || p.activity === "evasion",
+    (p) => (p.activity === "entrainement" && p.target && PHYSICAL.has(SKILLS[p.target as SkillId]?.attribute ?? "")) || p.activity === "evasion" || p.activity === "sport",
   ).length;
+  // La musculation construit davantage ; le cardio brûle davantage.
+  const muscu = plan.filter((p) => p.activity === "sport" && (p.target === "muscu" || p.target === "boxe")).length;
+  const cardio = plan.filter((p) => p.activity === "sport" && p.target === "cardio").length;
   const rest = plan.filter((p) => p.activity === "repos" || p.activity === "loisirs").length;
   const hurt = (c.injuries ?? []).filter((i) => i.healDay !== undefined).length;
   const cap = muscleCap(c);
   const [min, , max] = FAT_RANGE[c.identity.gender];
 
-  let muscle = body.muscle + physical * 1.3 - (physical === 0 ? 0.5 : 0) - hurt * 0.7 - (opts.prison ? 0.8 : 0);
+  let muscle = body.muscle + physical * 1.3 + muscu * 0.8 - (physical === 0 ? 0.5 : 0) - hurt * 0.7 - (opts.prison ? 0.8 : 0);
   if (muscle > cap) muscle = Math.max(cap, body.muscle - 0.5);
   muscle = Math.max(12, Math.min(100, muscle));
-  let fat = body.fat + rest * 0.3 - physical * 0.45 - (opts.fatigue >= 60 ? 0.3 : 0) - (opts.prison ? 0.4 : 0) + (c.morale <= 3 ? 0.3 : 0);
+  let fat = body.fat + rest * 0.3 - physical * 0.45 - cardio * 0.5 - (opts.fatigue >= 60 ? 0.3 : 0) - (opts.prison ? 0.4 : 0) + (c.morale <= 3 ? 0.3 : 0);
   fat = Math.max(min, Math.min(max, fat));
   const next: Body = { ...body, muscle: Math.round(muscle * 10) / 10, fat: Math.round(fat * 10) / 10, prev: { muscle: body.muscle, fat: body.fat } };
 

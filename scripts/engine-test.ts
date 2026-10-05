@@ -310,6 +310,22 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   check("langues : les anciennes sauvegardes sont corrigées", old.character.spoken.includes("chinois") && old.character.spoken.includes("anglais"));
 }
 
+// Les nouvelles activités.
+{
+  const base = { ...s, character: { ...s.character, prison: null, fatigue: 0, money: 5000, heat: { "792": 40 }, injuries: [{ id: "i1", name: "Contusions", description: "", malus: { endurance: -1 }, healDay: s.world.day + 20 }] }, world: { ...s.world, restUntil: s.world.day } };
+  const w1 = resolveWeek(base, [{ activity: "sport", target: "muscu" }, { activity: "exercice", target: "filature" }, { activity: "job" }], rng);
+  check("activités : sport, exercice, petit boulot", w1.state.character.money > base.character.money - weeklyUpkeep(base) && w1.report.lines.some((l) => l.startsWith("Exercice de terrain")) && (w1.state.character.body?.muscle ?? 0) > (base.character.body?.muscle ?? 0), w1.report.lines.filter((l) => /Sport|Exercice|boulot/.test(l)).join(" / "));
+  const w2 = resolveWeek(base, [{ activity: "veille", target: "est" }, { activity: "soins" }, { activity: "profil_bas" }], rng);
+  check("activités : veille, soins, profil bas", w2.state.knowledge.regions.est === base.world.day && (w2.state.character.heat["792"] ?? 0) < 40 && (w2.state.character.injuries[0]?.healDay ?? 0) <= base.world.day + 13);
+  {
+    const officer = { ...base, character: { ...base.character, rank: "agent" as const } };
+    const holder = { ...base, character: { ...base.character, rank: "titulaire" as const } };
+    const plan = [{ activity: "instruire" as const }, { activity: "repos" as const }, { activity: "repos" as const }];
+    check("activités : instruire, réservé aux titulaires", planError(officer, plan) !== null && planError(holder, plan) === null);
+  }
+  check("activités : une variante est exigée", planError(base, [{ activity: "sport" }, { activity: "repos" }, { activity: "repos" }]) !== null);
+}
+
 // Le rythme : plusieurs semaines d'affilée, avec des arrêts sur ce qui compte.
 {
   const base = { ...s, character: { ...s.character, prison: null, injuries: [], fatigue: 0, health: s.character.healthMax }, duties: [], world: { ...s.world, restUntil: s.world.day } };

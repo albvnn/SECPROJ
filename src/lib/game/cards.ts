@@ -10,7 +10,7 @@ import { REST_DAYS, currentNode, type NodeOutcome } from "./missions";
 import { ACTIVITIES } from "./planner";
 import { MISSION_IMPORTANCE, RANKS, SKILLS, missionBonus, missionMerit } from "./rules";
 import type { ActivityChoice, GameState, GaugeShift, Mission, RankId, StoryCard, StoryDoc } from "./types";
-import { findCity, findCountry } from "@/lib/world/geo";
+import { findCity, findCountry, REGIONS } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
 
 type NodeOutcomeLike = Pick<NodeOutcome, "outcome" | "notices" | "finished">;
@@ -23,6 +23,8 @@ function targetLabel(state: GameState, p: ActivityChoice): string | undefined {
     findBranch(c.identity.agency, p.target)?.name ??
     c.legends.find((l) => l.id === p.target)?.name ??
     state.duties.find((d) => d.id === p.target)?.title ??
+    ACTIVITIES[p.activity]?.options?.find((o) => o.id === p.target)?.label ??
+    REGIONS[p.target as keyof typeof REGIONS]?.label ??
     findCity(p.target)?.name ??
     AGENCIES[p.target as keyof typeof AGENCIES]?.name ??
     p.target
