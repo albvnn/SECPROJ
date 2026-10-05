@@ -143,7 +143,8 @@ s = { ...s, character: { ...s.character, prison: { country: "364", cityId: "tehe
 check("en détention : planning spécial", planError(s, defaultPlan(s)) === null && planError(s, [{ activity: "repos" }, { activity: "repos" }, { activity: "repos" }]) !== null);
 check("pas de mission en détention", canStartMission(s) !== null);
 let freed = false;
-for (let i = 0; i < 12 && !freed; i++) {
+// L'échange et l'évasion sont aléatoires : on laisse jusqu'à 30 semaines.
+for (let i = 0; i < 30 && !freed; i++) {
   const r = resolveWeek(s, defaultPlan(s), rng);
   s = r.state;
   freed = !s.character.prison;

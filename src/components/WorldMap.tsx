@@ -59,7 +59,8 @@ function useShapes() {
       { type: "FeatureCollection", features },
     );
     const path = geoPath(projection);
-    const shapes: Shape[] = features.map((f) => ({ id: String(f.id), d: path(f) ?? "" }));
+    // Kosovo, Chypre du Nord et Somaliland n'ont pas de code dans l'atlas : leur nom sert d'identifiant (unique).
+    const shapes: Shape[] = features.map((f) => ({ id: f.id === undefined ? `sans-code:${f.properties?.name}` : String(f.id), d: path(f) ?? "" }));
     const farEast = `M${FAR_EAST_OUTLINE.map((p) => projection(p)!.map((n) => n.toFixed(1)).join(",")).join("L")}Z`;
     const graticule = path({ type: "Sphere" }) ?? "";
     return { shapes, project: (lat: number, lon: number) => projection([lon, lat]) ?? [0, 0], farEast, graticule };
