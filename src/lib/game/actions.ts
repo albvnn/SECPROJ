@@ -20,7 +20,8 @@ import { ACTIVITIES, resolveWeek } from "./planner";
 import { d6, type Rng } from "./rng";
 import { OPERATIVE_TRAITS, operativeSkill, operativeTitle } from "./roster";
 import { DIFFICULTIES, MISSION_IMPORTANCE, MISSION_RESULTS, PARTIAL_MARGIN, RANKS, SKILLS } from "./rules";
-import type { Approach, CheckOutcome, CheckResult, GameState, Mission, PlayerAction } from "./types";
+import type { Approach, CheckOutcome, CheckResult, GameState, Mission, PlayerAction, StoryCard } from "./types";
+import { briefingCard, promotionCard, stepCards, weekCard } from "./cards";
 import { cityRegion, findCity, findCountry } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
 
@@ -35,6 +36,8 @@ export interface EngineStep {
   /** Le narrateur doit-il proposer des choix (un événement à jouer) ? */
   expectChoices: boolean;
   finished?: boolean;
+  /** Cartes à afficher dans le récit avant la narration. */
+  cards: StoryCard[];
 }
 
 /** Libellé de l'action du joueur, avant même qu'elle soit jouée (affichage en direct). */
@@ -183,25 +186,28 @@ export function runEngineAction(state: GameState, action: PlayerAction, roll: ()
         ...r.notices.filter((n) => !r.report.lines.some((l) => l.includes(n))).map((n) => `- ${n}`),
         r.report.event ? `\nÉVÉNEMENT DE LA SEMAINE (à jouer en scène) : ${r.report.event}` : "\nPas d'événement particulier cette semaine.",
       ].join("\n");
-      return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: Boolean(r.report.event) };
+      const cards = [weekCard(state, r.state, action.plan, r.report.lines, Boolean(r.report.event))];
+      return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: Boolean(r.report.event), cards };
     }
     case "mission_start": {
       const r = startMission(state, action.offer, action.team, action.gadgets, rng, action.legend);
       const m = r.state.mission!;
       const facts = `LE JOUEUR PART EN MISSION (préparée dans le jeu).\n${missionBrief(r.state, m)}\n\n${nextStepText(r.state)}`;
-      return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: false };
+      const brief = briefingCard(r.state, r.notices);
+      return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: false, cards: brief ? [brief] : [] };
     }
     case "node": {
       const before = state.mission!;
       const node = currentNode(before)!;
+      const approach = nodeOptions(state).find((x) => x.id === action.approach)?.label ?? "";
       const r = resolveNode(state, action.approach, action.intel, roll, rng);
-      return engineNodeStep(state, r, node.title, label);
+      return engineNodeStep(state, r, node.title, label, approach);
     }
     case "resource": {
       if (!state.mission || state.mission.stage !== "terrain") return null;
       const node = currentNode(state.mission)!;
       const r = useResource(state, action.source);
-      return engineNodeStep(state, r, node.title, label);
+      return engineNodeStep(state, r, node.title, label, r.notices[0] ?? "Soutien");
     }
     case "promotion": {
       const r = promote(state, action.rank, { seat: action.seat, station: action.station });
@@ -217,14 +223,14 @@ export function runEngineAction(state: GameState, action: PlayerAction, roll: ()
       ]
         .filter(Boolean)
         .join("\n");
-      return { state: r.state, notices: r.notices, checks: [], facts, label: `❖ ${RANKS[action.rank].label}`, expectChoices: false };
+      return { state: r.state, notices: r.notices, checks: [], facts, label: `❖ ${RANKS[action.rank].label}`, expectChoices: false, cards: [promotionCard(r.state, action.rank, r.notices)] };
     }
     default:
       return null;
   }
 }
 
-export function engineNodeStep(before: GameState, r: NodeOutcome, nodeTitle: string, label: string): EngineStep {
+export function engineNodeStep(before: GameState, r: NodeOutcome, nodeTitle: string, label: string, approach = label): EngineStep {
   const after = r.state;
   const m = after.mission;
   const facts = [
@@ -238,7 +244,8 @@ export function engineNodeStep(before: GameState, r: NodeOutcome, nodeTitle: str
   ]
     .filter(Boolean)
     .join("\n");
-  return { state: after, notices: r.notices, checks: r.check ? [r.check] : [], facts, label, expectChoices: false, finished: Boolean(r.finished) };
+  const cards = stepCards(before, after, r, approach.replace(/^▸ /, ""));
+  return { state: after, notices: r.notices, checks: r.check ? [r.check] : [], facts, label, expectChoices: false, finished: Boolean(r.finished), cards };
 }
 
 export const isEngineAction = (a: PlayerAction, state: GameState) =>

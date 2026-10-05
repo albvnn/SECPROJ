@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { tint } from "@/lib/ui/color";
 import {
   ATTRIBUTE_IDS,
@@ -40,7 +40,6 @@ import {
   currentDate,
   nextRanks,
   rankMissing,
-  resourceAvailable,
   skillTotal,
   spendPolePoint,
   spendSkillPoint,
@@ -61,20 +60,21 @@ import type {
   SkillId,
 } from "@/lib/game/types";
 import { PoleEmblem, SkillGlyph } from "./glyphs";
+import { DOC_LABELS, StoryDocView } from "./StoryCards";
+import { Possessions } from "./WeekPlanner";
 import { RichText } from "./RichText";
 import { BranchSigil, SeatSigil } from "./sigils";
 import { Bar, RankBadge } from "./ui";
 import { findCity, findCountry } from "@/lib/world/geo";
 
-type Tab = "fiche" | "agent" | "relations" | "sac" | "carnet" | "dossier";
+type Tab = "fiche" | "agent" | "relations" | "affaires" | "carnet";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "fiche", label: "Fiche" },
-  { id: "agent", label: "Agent" },
-  { id: "relations", label: "Liens" },
-  { id: "sac", label: "Sac" },
-  { id: "carnet", label: "Carnet" },
-  { id: "dossier", label: "Dossier" },
+const TABS: { id: Tab; label: string; hint: string }[] = [
+  { id: "fiche", label: "Perso", hint: "État, compétences, blessures, langues" },
+  { id: "agent", label: "Carrière", hint: "Grade, siège ou Station, Branches, légendes" },
+  { id: "relations", label: "Liens", hint: "Les gens qui comptent" },
+  { id: "affaires", label: "Affaires", hint: "Sac, argent, patrimoine" },
+  { id: "carnet", label: "Carnet", hint: "Faits établis, pièces, dossier" },
 ];
 
 interface SheetProps {
@@ -90,6 +90,12 @@ interface SheetProps {
 export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: SheetProps) {
   const [tab, setTab] = useState<Tab>("fiche");
   const activeRelations = state.relations.filter((r) => r.status !== "archive" && r.status !== "mort").length;
+  // Pièces reçues depuis la dernière visite du carnet.
+  const [seenPieces, setSeenPieces] = useState(state.pieces?.length ?? 0);
+  const newPieces = tab === "carnet" ? 0 : Math.max(0, (state.pieces?.length ?? 0) - seenPieces);
+  useEffect(() => {
+    if (tab === "carnet") setSeenPieces(state.pieces?.length ?? 0);
+  }, [tab, state.pieces?.length]);
   return (
     <div className="flex h-full flex-col">
       <nav className="flex shrink-0 border-b border-line">
@@ -97,12 +103,14 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: S
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
+            title={t.hint}
             className={`flex-1 py-3 text-[10px] font-semibold tracking-[0.08em] uppercase transition-colors ${
               tab === t.id ? "border-b-2 border-brass text-brass-soft" : "text-muted hover:text-ivory"
             }`}
           >
             {t.label}
             {t.id === "relations" && activeRelations > 0 && <span className="ml-1 text-faint">{activeRelations}</span>}
+            {t.id === "carnet" && newPieces > 0 && <span className="ml-1 rounded-full bg-brass px-1.5 text-[9px] text-ink">{newPieces}</span>}
             {t.id === "fiche" && state.character.skillPoints > 0 && (
               <span className="ml-1 rounded-full bg-brass px-1.5 text-[9px] text-ink">{state.character.skillPoints}</span>
             )}
@@ -110,12 +118,17 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: S
         ))}
       </nav>
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-5">
-        {tab === "fiche" && <Fiche state={state} onChange={onChange} onAction={onAction} />}
+        {tab === "fiche" && <Fiche state={state} onChange={onChange} />}
         {tab === "agent" && <AgentTab state={state} onOpenPromotion={onOpenPromotion} />}
         {tab === "relations" && <Relations state={state} onChange={onChange} onAction={onAction} />}
-        {tab === "sac" && <Inventory state={state} onChange={onChange} onAction={onAction} />}
-        {tab === "carnet" && <Carnet state={state} />}
-        {tab === "dossier" && <DossierTab state={state} />}
+        {tab === "affaires" && (
+          <div className="space-y-8">
+            <Finances state={state} />
+            <Inventory state={state} onChange={onChange} onAction={onAction} />
+            {RANKS[state.character.rank].order >= RANKS.aspirant.order && !state.character.prison && <Possessions state={state} onChange={onChange} compact />}
+          </div>
+        )}
+        {tab === "carnet" && <CarnetTab state={state} />}
       </div>
     </div>
   );
@@ -125,7 +138,7 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: S
 /* Fiche                                                               */
 /* ------------------------------------------------------------------ */
 
-function Fiche({ state, onChange, onAction }: SheetProps) {
+function Fiche({ state, onChange }: SheetProps) {
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
   const rank = RANKS[c.rank];
@@ -181,7 +194,7 @@ function Fiche({ state, onChange, onAction }: SheetProps) {
         </section>
       )}
 
-      {state.mission && <MissionPanel state={state} onAction={onAction} />}
+      {state.mission && <MissionPanel state={state} />}
 
       <section className="space-y-3">
         <Bar label="Santé" value={c.health} max={c.healthMax} color={healthColor} />
@@ -266,18 +279,12 @@ function Fiche({ state, onChange, onAction }: SheetProps) {
   );
 }
 
-function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: PlayerAction) => void }) {
+function MissionPanel({ state }: { state: GameState }) {
   const m = state.mission!;
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
-  const seat = findSeat(c.identity.agency, c.seat);
   const legend = c.legends.find((l) => l.id === m.legend);
   const team = m.team.map((id) => state.roster.find((o) => o.id === id)).filter((o) => o !== undefined);
-  const supports = [
-    ...(seat ? [{ id: "seat", name: seat.signature.name, from: seat.name, description: seat.signature.description }] : []),
-    ...(c.rank !== "aspirant" ? agency.branches.map((b) => ({ id: b.id, name: b.support.name, from: b.name, description: b.support.description })) : []),
-  ];
-  const [confirm, setConfirm] = useState<string | null>(null);
   return (
     <section className="rounded-sm border p-3" style={{ borderColor: tint(agency.color, 45), background: tint(agency.color, 7) }}>
       <p className="label" style={{ color: agency.color }}>
@@ -305,40 +312,7 @@ function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: Pl
           <div className="h-full rounded-full transition-all duration-700" style={{ width: `${(m.current / m.nodes.length) * 100}%`, background: agency.color }} />
         </div>
       </div>
-      {supports.length > 0 && (
-        <div className="mt-3 space-y-1.5 border-t pt-2.5" style={{ borderColor: tint(agency.color, 25) }}>
-          <p className="label">Soutiens · une fois par mission</p>
-          {supports.map(({ id, name, from, description }) => {
-            const available = resourceAvailable(state, id);
-            return (
-              <div key={id} className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className={`text-xs ${available ? "text-ivory" : "text-faint line-through"}`}>
-                    {id === "seat" ? "✦" : "⚙"} {name} <span className="text-faint">· {from}</span>
-                  </p>
-                  <p className="text-[11px] text-muted">{description}</p>
-                </div>
-                {available && onAction && (
-                  <button
-                    onClick={() => {
-                      if (confirm === id) {
-                        setConfirm(null);
-                        onAction({ type: "resource", source: id });
-                      } else setConfirm(id);
-                    }}
-                    onBlur={() => setConfirm(null)}
-                    className="shrink-0 rounded-sm border px-2 py-1 text-[10px] font-semibold tracking-[0.12em] uppercase transition-colors hover:bg-brass hover:text-ink"
-                    style={{ borderColor: agency.color, color: confirm === id ? undefined : agency.color }}
-                  >
-                    {confirm === id ? "Confirmer" : "Utiliser"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <p className="text-[10px] text-faint">Le coup signature ne vaut que sur certaines étapes ; une Branche qui ne t'estime pas ({BRANCH_FAVOR_MIN} ou moins) refuse son aide.</p>
-        </div>
-      )}
+      {state.world.phase === "mission" && <p className="mt-2 text-[11px] text-faint">Approches, soutiens et improvisation : dans la console de mission, sous le récit.</p>}
     </section>
   );
 }
@@ -471,46 +445,10 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
   const currentOrder = RANKS[c.rank].order;
   const meritTarget = nexts.length ? Math.min(...nexts.map((r) => RANKS[r].merit).filter((m) => m > 0), Infinity) : 0;
   const hasTarget = Number.isFinite(meritTarget) && meritTarget > 0;
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <div className="space-y-7">
-      <section className="rounded-sm border p-3" style={{ borderColor: tint(agency.color, 40), background: tint(agency.color, 6) }}>
-        <p className="font-serif text-2xl tracking-[0.15em]" style={{ color: agency.color }}>
-          {agency.name}
-        </p>
-        <p className="text-xs text-ivory/80 italic">« {agency.motto} »</p>
-        <dl className="mt-2 space-y-1 text-xs leading-relaxed text-muted">
-          <div>
-            <dt className="inline text-ivory/70">Région. </dt>
-            <dd className="inline">{agency.region} · signalé{c.identity.gender === "fille" ? "e" : ""} par : {c.identity.nationality}</dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Direction. </dt>
-            <dd className="inline">
-              {agency.director.name}, « {agency.director.codename} »
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Quartier général. </dt>
-            <dd className="inline">{agency.hq}</dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Académie. </dt>
-            <dd className="inline">{agency.academy}</dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Laboratoire. </dt>
-            <dd className="inline">
-              {agency.lab.name}, {agency.lab.chief}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-ivory/70">Noms de code. </dt>
-            <dd className="inline">{agency.codenames.theme}</dd>
-          </div>
-        </dl>
-      </section>
-
       <section>
         <h3 className="label mb-3">Grade</h3>
         <div className="flex items-start gap-3">
@@ -564,8 +502,98 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
         </div>
       </section>
 
+      <OrganisationSection state={state} />
+      <LegendsSection state={state} />
+      <HeatSection state={state} />
+
       <section>
-        <h3 className="label mb-3">Les grades du Concordat</h3>
+        <h3 className="label mb-3">Distinctions</h3>
+        {c.distinctions.length === 0 ? (
+          <p className="text-xs text-faint italic">Aucune pour l'instant.</p>
+        ) : (
+          <ul className="space-y-2">
+            {c.distinctions.map((d, i) => (
+              <li key={i}>
+                <p className="text-sm">
+                  <span className="text-brass">✦</span> {d.name}
+                </p>
+                <p className="pl-4 text-xs text-muted">{d.reason}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Folding title="Les distinctions du Concordat">
+          <ul className="space-y-1.5">
+            {PINS.map((p) => (
+              <li key={p.name} className="text-xs">
+                <span className="text-ivory/80">✦ {p.name}</span> <span className="text-muted">— {p.description}</span>
+              </li>
+            ))}
+          </ul>
+        </Folding>
+      </section>
+
+      <section>
+        <h3 className="label mb-3">Progression</h3>
+        {state.progress.length === 0 ? (
+          <p className="text-sm text-faint italic">Ta progression s'écrira ici.</p>
+        ) : (
+          <ol className="space-y-1.5">
+            {[...state.progress].reverse().slice(0, showAll ? undefined : 12).map((p, i) => (
+              <li key={i} className="flex gap-2 text-xs leading-relaxed">
+                <span className="w-4 shrink-0 text-center text-brass/80">{PROGRESS_ICONS[p.kind] ?? "·"}</span>
+                <span className="flex-1 text-ivory/85">{p.text}</span>
+                <span className="shrink-0 font-mono text-[10px] text-faint">{p.day > 0 ? `J${p.day}` : "—"}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {state.progress.length > 12 && (
+          <button onClick={() => setShowAll((v) => !v)} className="mt-2 text-[10px] tracking-[0.15em] text-muted uppercase hover:text-ivory">
+            {showAll ? "Réduire" : `Tout voir (${state.progress.length})`}
+          </button>
+        )}
+      </section>
+
+      <section className="space-y-2 border-t border-line pt-4">
+        <Folding title={`L'agence · ${agency.name}`}>
+        <p className="font-serif text-2xl tracking-[0.15em]" style={{ color: agency.color }}>
+          {agency.name}
+        </p>
+        <p className="text-xs text-ivory/80 italic">« {agency.motto} »</p>
+        <dl className="mt-2 space-y-1 text-xs leading-relaxed text-muted">
+          <div>
+            <dt className="inline text-ivory/70">Région. </dt>
+            <dd className="inline">{agency.region} · signalé{c.identity.gender === "fille" ? "e" : ""} par : {c.identity.nationality}</dd>
+          </div>
+          <div>
+            <dt className="inline text-ivory/70">Direction. </dt>
+            <dd className="inline">
+              {agency.director.name}, « {agency.director.codename} »
+            </dd>
+          </div>
+          <div>
+            <dt className="inline text-ivory/70">Quartier général. </dt>
+            <dd className="inline">{agency.hq}</dd>
+          </div>
+          <div>
+            <dt className="inline text-ivory/70">Académie. </dt>
+            <dd className="inline">{agency.academy}</dd>
+          </div>
+          <div>
+            <dt className="inline text-ivory/70">Laboratoire. </dt>
+            <dd className="inline">
+              {agency.lab.name}, {agency.lab.chief}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline text-ivory/70">Noms de code. </dt>
+            <dd className="inline">{agency.codenames.theme}</dd>
+          </div>
+        </dl>
+              </Folding>
+        <Folding title="Les grades du Concordat">
+
         <ol className="space-y-1.5">
           {RANK_IDS.map((r) => {
             const def = RANKS[r];
@@ -592,14 +620,9 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
             );
           })}
         </ol>
-      </section>
+              </Folding>
+        <Folding title="Parcours et âge">
 
-      <OrganisationSection state={state} />
-      <LegendsSection state={state} />
-      <HeatSection state={state} />
-
-      <section>
-        <h3 className="label mb-3">Parcours</h3>
         <ol className="relative space-y-3 border-l border-line pl-4">
           {PHASE_IDS.filter((p) => p !== "dossier").map((p) => {
             const done = PHASE_IDS.indexOf(p) < phaseIndex && !(p === "mission" && w.phase !== "apres");
@@ -636,8 +659,29 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
           {age} ans · {formatDate(currentDate(state))}
           {age < BREVET_AGE && ` · Brevet dans ${BREVET_AGE - age} an${BREVET_AGE - age > 1 ? "s" : ""} environ`}
         </p>
+              </Folding>
       </section>
+    </div>
+  );
+}
 
+/** Une section repliée par défaut : ce qu'on consulte rarement. */
+function Folding({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-sm border border-line px-3 py-2">
+      <summary className="label cursor-pointer list-none select-none hover:text-ivory">
+        <span className="inline-block transition-transform group-open:rotate-90">▸</span> {title}
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
+/** Ce que coûte et rapporte la vie d'agent. */
+function Finances({ state }: { state: GameState }) {
+  const c = state.character;
+  const currentOrder = RANKS[c.rank].order;
+  return (
       <section>
         <h3 className="label mb-3">Finances</h3>
         <dl className="space-y-1.5 text-sm">
@@ -647,52 +691,6 @@ function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotio
           <Row label="Prime de mission" value={currentOrder >= RANKS.agent.order ? "1 000 € par point de mérite" : "—"} />
         </dl>
       </section>
-
-      <section>
-        <h3 className="label mb-3">Distinctions</h3>
-        <ul className="space-y-2">
-          {PINS.map((p) => {
-            const earned = c.distinctions.filter((d) => d.name.toLowerCase().includes(p.name.toLowerCase()));
-            return (
-              <li key={p.name} className={earned.length ? "" : "opacity-40"}>
-                <p className="text-sm">
-                  <span className={earned.length ? "text-brass" : "text-faint"}>✦</span> {p.name}
-                  {earned.length > 1 && <span className="ml-1 font-mono text-[10px] text-brass">×{earned.length}</span>}
-                </p>
-                <p className="pl-4 text-xs text-muted">{earned[0]?.reason ?? p.description}</p>
-              </li>
-            );
-          })}
-          {c.distinctions
-            .filter((d) => !PINS.some((p) => d.name.toLowerCase().includes(p.name.toLowerCase())))
-            .map((d, i) => (
-              <li key={i}>
-                <p className="text-sm">
-                  <span className="text-brass">✦</span> {d.name}
-                </p>
-                <p className="pl-4 text-xs text-muted">{d.reason}</p>
-              </li>
-            ))}
-        </ul>
-      </section>
-
-      <section>
-        <h3 className="label mb-3">Progression</h3>
-        {state.progress.length === 0 ? (
-          <p className="text-sm text-faint italic">Ta progression s'écrira ici.</p>
-        ) : (
-          <ol className="space-y-1.5">
-            {[...state.progress].reverse().map((p, i) => (
-              <li key={i} className="flex gap-2 text-xs leading-relaxed">
-                <span className="w-4 shrink-0 text-center text-brass/80">{PROGRESS_ICONS[p.kind] ?? "·"}</span>
-                <span className="flex-1 text-ivory/85">{p.text}</span>
-                <span className="shrink-0 font-mono text-[10px] text-faint">{p.day > 0 ? `J${p.day}` : "—"}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-    </div>
   );
 }
 
@@ -1352,6 +1350,66 @@ function Carnet({ state }: { state: GameState }) {
         </div>
       )}
     </div>
+  );
+}
+
+function CarnetTab({ state }: { state: GameState }) {
+  const pieces = state.pieces ?? [];
+  const [view, setView] = useState<"notes" | "pieces" | "dossier">("notes");
+  return (
+    <div className="space-y-5">
+      <div className="flex overflow-hidden rounded-sm border border-line">
+        {(
+          [
+            ["notes", "Notes"],
+            ["pieces", `Pièces${pieces.length ? ` · ${pieces.length}` : ""}`],
+            ["dossier", "Dossier"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setView(id)}
+            className={`flex-1 px-2 py-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase ${view === id ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "notes" && <Carnet state={state} />}
+      {view === "pieces" && <Pieces state={state} />}
+      {view === "dossier" && <DossierTab state={state} />}
+    </div>
+  );
+}
+
+/** Les pièces montrées par le narrateur : on peut les relire, et y revenir. */
+function Pieces({ state }: { state: GameState }) {
+  const pieces = [...(state.pieces ?? [])].reverse();
+  const [open, setOpen] = useState<number | null>(pieces.length ? 0 : null);
+  if (!pieces.length) return <p className="text-sm text-faint italic">Les messages, lettres, coupures de presse et photos que tu croiseras seront rangés ici.</p>;
+  return (
+    <ul className="space-y-2">
+      {pieces.map((d, i) => (
+        <li key={i} className="rounded-sm border border-line">
+          <button onClick={() => setOpen(open === i ? null : i)} className="flex w-full items-baseline gap-2 px-3 py-2 text-left" aria-expanded={open === i}>
+            <span className="w-4 shrink-0 text-center text-brass">{DOC_LABELS[d.type].icon}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{d.titre}</span>
+              <span className="text-[10px] text-faint">
+                {DOC_LABELS[d.type].label}
+                {d.de ? ` · ${d.de}` : ""}
+                {d.day !== undefined ? ` · J${d.day}` : ""}
+              </span>
+            </span>
+          </button>
+          {open === i && (
+            <div className="border-t border-line px-1 pb-1 text-base">
+              <StoryDocView doc={d} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

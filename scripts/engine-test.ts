@@ -150,6 +150,27 @@ for (let i = 0; i < 12 && !freed; i++) {
 }
 check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours détenu" : s.world.location);
 
+// Cartes du récit : chaque action du moteur se met en scène.
+{
+  let t: GameState = { ...s, character: { ...s.character, prison: null }, world: { ...s.world, restUntil: s.world.day } };
+  const wk = runEngineAction(t, { type: "week", plan: defaultPlan(t) }, roll, rng)!;
+  const card = wk.cards[0];
+  check("carte : bilan de semaine", card?.type === "semaine" && card.plan.length === 3 && card.toDay === card.fromDay + 7);
+  t = { ...wk.state, world: { ...wk.state.world, restUntil: wk.state.world.day } };
+  t = { ...t, offers: [makeOffer(t, rng)] };
+  const go = runEngineAction(t, { type: "mission_start", offer: t.offers[0].id, team: [], gadgets: [] }, roll, rng)!;
+  check("carte : ordre de mission", go.cards[0]?.type === "briefing" && go.cards[0].steps.length === go.state.mission!.nodes.length);
+  t = go.state;
+  const kinds = new Set<string>();
+  for (let i = 0; i < 60 && t.mission; i++) {
+    const a = [...nodeOptions(t)].sort((x, y) => approachOdds(t, y, 1) - approachOdds(t, x, 1))[0];
+    const step = runEngineAction(t, { type: "node", approach: a.id, intel: 0 }, roll, rng)!;
+    step.cards.forEach((c) => kinds.add(c.type));
+    t = step.state;
+  }
+  check("cartes : étapes et débriefing", kinds.has("etape") && kinds.has("bilan"), [...kinds].join(", "));
+}
+
 // Migration d'une sauvegarde v3.
 const v3 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
 v3.version = 3;

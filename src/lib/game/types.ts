@@ -370,7 +370,91 @@ export interface CheckResult {
 export type Segment =
   | { kind: "text"; text: string }
   | { kind: "check"; check: CheckResult }
-  | { kind: "event"; text: string };
+  | { kind: "event"; text: string }
+  /** Carte du jeu (bilan, ordre de mission…), affichée dans le récit. */
+  | { kind: "card"; card: StoryCard }
+  /** Pièce montrée par le narrateur (message, lettre, coupure de presse…). */
+  | { kind: "doc"; doc: StoryDoc };
+
+/** Une jauge de mission avant et après une étape. */
+export interface GaugeShift {
+  label: string;
+  before: number;
+  after: number;
+  /** Plus c'est haut, pire c'est (exposition, alerte). */
+  bad?: boolean;
+  max?: number;
+}
+
+/** Ce que le jeu met en scène lui-même dans le récit, au moment où ça arrive. Tout est déjà rédigé pour l'affichage. */
+export type StoryCard =
+  | {
+      type: "semaine";
+      fromDay: number;
+      toDay: number;
+      dateLabel: string;
+      plan: { icon: string; label: string; detail?: string }[];
+      deltas: { label: string; value: number; unit?: string; good: boolean }[];
+      lines: string[];
+      event: boolean;
+    }
+  | {
+      type: "briefing";
+      name: string;
+      importance: MissionImportance;
+      kind: MissionKind;
+      city: string;
+      country: string;
+      objective: string;
+      target: string;
+      faction: string;
+      cover: string;
+      team: string[];
+      steps: { title: string; key?: boolean; secondary?: boolean; dilemma?: boolean; fork?: boolean }[];
+      notes: string[];
+    }
+  | {
+      type: "etape";
+      title: string;
+      approach: string;
+      outcome: CheckOutcome | "choix";
+      gauges: GaugeShift[];
+      notes: string[];
+      step: number;
+      steps: number;
+    }
+  | {
+      type: "bilan";
+      name: string;
+      result: MissionResult;
+      merit: number;
+      bonus: number;
+      lines: string[];
+      restDays: number;
+      /** Arrêté à la fin de la mission : par qui, et où. */
+      arrested?: string;
+    }
+  | { type: "promotion"; rank: RankId; title: string; subtitle: string; lines: string[] };
+
+export type StoryDocType = "message" | "lettre" | "presse" | "chiffre" | "photo";
+
+/** Une pièce que le narrateur montre telle quelle au joueur. */
+export interface StoryDoc {
+  type: StoryDocType;
+  titre: string;
+  /** Expéditeur, source, auteur ou photographe. */
+  de?: string;
+  /** Date ou heure telle qu'elle apparaît sur la pièce. */
+  date?: string;
+  /** Texte de la pièce. Les passages entre ||barres|| sont masqués jusqu'à ce que le joueur les lise de près. */
+  contenu: string;
+  /** Messages d'une conversation (type « message »). */
+  messages?: { de: string; texte: string }[];
+  /** Pour une photo : la légende manuscrite au dos. */
+  legende?: string;
+  /** Jour de jeu où la pièce a été montrée. */
+  day?: number;
+}
 
 export interface LogEntry {
   id: string;
@@ -829,6 +913,8 @@ export interface GameState {
   routing: Routing | null;
   /** Historique de la progression du personnage. */
   progress: ProgressEntry[];
+  /** Pièces montrées par le narrateur, gardées dans le carnet (les plus récentes en dernier). */
+  pieces: StoryDoc[];
   /** Consommation cumulée de l'API sur la partie. */
   usage: Usage & { turns: number };
 }
@@ -866,6 +952,8 @@ export type StreamEvent =
   | { type: "text"; text: string }
   | { type: "check"; check: CheckResult }
   | { type: "event"; text: string }
+  /** Carte du jeu ou pièce du narrateur, à insérer dans le récit. */
+  | { type: "segment"; segment: Extract<Segment, { kind: "card" | "doc" }> }
   | { type: "choices"; choices: Choice[] }
   | { type: "reinterpreted"; text: string; reason: string }
   | { type: "rejected"; reason: string; suggestion: string }

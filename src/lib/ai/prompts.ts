@@ -26,6 +26,7 @@ import { AGENCIES, findSeat } from "@/lib/game/agencies";
 import { branchFavor } from "@/lib/game/command";
 import { capFor, currentAge, currentDate, dateOfAge, nextRanks, rankMissing, signed, skillTotal } from "@/lib/game/engine";
 import { missionBrief } from "@/lib/game/actions";
+import { cardToText, docText } from "@/lib/game/cards";
 import { lifeSummary } from "@/lib/game/planner";
 import { chambree, OPERATIVE_TRAITS } from "@/lib/game/roster";
 import { findCity, findCountry } from "@/lib/world/geo";
@@ -263,6 +264,8 @@ export function entryToText(entry: LogEntry): string {
     .map((s) => {
       if (s.kind === "text") return s.text.trim();
       if (s.kind === "event") return `[${s.text}]`;
+      if (s.kind === "card") return cardToText(s.card);
+      if (s.kind === "doc") return `[Pièce montrée au joueur — ${s.doc.titre}${s.doc.de ? `, de ${s.doc.de}` : ""} : ${docText(s.doc)}]`;
       const k = s.check;
       return `[Jet ${k.red ? "rouge " : ""}${SKILLS[k.skill].label} — ${k.reason} : ${k.dice[0]}+${k.dice[1]}${signed(k.bonus)} = ${k.total} contre ${k.dc} → ${OUTCOMES[k.outcome].label}]`;
     })

@@ -6,7 +6,7 @@ import { BRANCH_FAVOR_MIN, skillTotal } from "@/lib/game/engine";
 import { branchFavor } from "@/lib/game/command";
 import { POSSESSIONS, buyPossession, owns, sellPossession, weeklyUpkeep, type PossessionDef } from "@/lib/game/economy";
 import { ALL_LANGUAGES, LEGEND_COST, legendCap } from "@/lib/game/field";
-import { ACADEMIC_SKILLS, ACTIVITIES, ACTIVITY_IDS, SLOTS, activeRelations, activityBlocker, assetCap, planError } from "@/lib/game/planner";
+import { ACADEMIC_SKILLS, ACTIVITIES, ACTIVITY_IDS, activeRelations, activityBlocker, assetCap, planError } from "@/lib/game/planner";
 import { ATTRIBUTE_IDS, ATTRIBUTES, RANKS, SKILLS, formatEuros, skillsOf } from "@/lib/game/rules";
 import type { ActivityChoice, ActivityId, AgencyId, GameState, SkillId } from "@/lib/game/types";
 import { formatDate } from "@/lib/game/calendar";
@@ -14,72 +14,56 @@ import { upcoming } from "@/lib/world/agenda";
 import { CITIES, findCity, findCountry } from "@/lib/world/geo";
 
 /** Planning d'une semaine : trois créneaux, puis le moteur fait passer sept jours. */
-export function WeekPlanner({
+export function WeekSlots({
   state,
   plan,
   setPlan,
   onPlay,
-  onChange,
   busy,
 }: {
   state: GameState;
   plan: ActivityChoice[];
   setPlan: (p: ActivityChoice[]) => void;
   onPlay?: () => void;
-  /** Décisions immédiates (achats, résiliations) : absent pendant qu'un tour s'écrit. */
-  onChange?: (s: GameState) => void;
   busy: boolean;
 }) {
   const error = planError(state, plan);
   const setSlot = (i: number, choice: ActivityChoice) => setPlan(plan.map((p, j) => (j === i ? choice : p)));
-  const prison = state.character.prison;
-
+  const [picking, setPicking] = useState<number | null>(null);
   return (
-    <div className="space-y-6">
-      {prison && <PrisonBanner state={state} />}
-      <StatusStrip state={state} />
-
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h3 className="label">{prison ? "En cellule" : "Ta semaine"} · {SLOTS} créneaux</h3>
-          <span className="text-[11px] text-faint">
-            Jour {state.world.day} → {state.world.day + 7}
-          </span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {plan.map((slot, i) => (
-            <SlotEditor key={i} index={i} state={state} slot={slot} onChange={(c) => setSlot(i, c)} />
-          ))}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>{error ?? "Le jeu résout la semaine, puis le narrateur la raconte. Un événement peut survenir."}</p>
-          {onPlay && (
-            <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
-              Jouer la semaine ▸
-            </button>
-          )}
-        </div>
-      </section>
-
-      <Duties state={state} />
-      <Agenda state={state} />
-      {!prison && <Possessions state={state} onChange={onChange} />}
-
-      {state.lastWeek && (
-        <section>
-          <h3 className="label mb-2">La semaine dernière (jour {state.lastWeek.day})</h3>
-          <ul className="space-y-1 text-xs text-muted">
-            {state.lastWeek.lines.map((l, i) => (
-              <li key={i}>· {l}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </div>
+    <section>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="font-serif text-2xl">{state.character.prison ? "En cellule" : "Ta semaine"}</h3>
+        <span className="text-[11px] text-faint">
+          Jour {state.world.day} → {state.world.day + 7}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {plan.map((slot, i) => (
+          <SlotEditor
+            key={i}
+            index={i}
+            state={state}
+            slot={slot}
+            picking={picking === i}
+            onPick={(open) => setPicking(open ? i : null)}
+            onChange={(c) => setSlot(i, c)}
+          />
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>{error ?? "Sept jours passent, le narrateur raconte. Un événement peut survenir."}</p>
+        {onPlay && (
+          <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
+            Jouer la semaine ▸
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
-function PrisonBanner({ state }: { state: GameState }) {
+export function PrisonBanner({ state }: { state: GameState }) {
   const p = state.character.prison!;
   const city = findCity(p.cityId);
   const country = findCountry(p.country);
@@ -109,7 +93,7 @@ export function StatusStrip({ state }: { state: GameState }) {
   const upkeep = weeklyUpkeep(state);
   const injuries = c.injuries ?? [];
   return (
-    <div className="grid gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
       <Gauge label="Fatigue" value={c.fatigue} color={c.fatigue >= 60 ? "var(--color-fail)" : "var(--color-partial)"} hint={c.fatigue >= 60 ? "Malus aux jets" : "Repos : −35"} />
       <Gauge label="Couverture civile" value={c.cover} color={c.cover < 30 ? "var(--color-fail)" : "var(--color-success)"} hint={c.cover < 30 ? "Ta famille pose des questions" : "Vie officielle : +30"} />
       <div className="rounded-sm border border-line bg-panel/50 px-3 py-2">
@@ -180,37 +164,117 @@ function defaultTarget(state: GameState, a: ActivityId): string | undefined {
   }
 }
 
-function SlotEditor({ index, state, slot, onChange }: { index: number; state: GameState; slot: ActivityChoice; onChange: (c: ActivityChoice) => void }) {
+/** L'effet d'une activité en quelques mots. */
+const SHORT: Record<ActivityId, string> = {
+  cours: "Examens · compétences académiques",
+  entrainement: "+2 xp sur une compétence · fatigant",
+  repos: "Santé +3 · moral +2 · fatigue −35",
+  loisirs: "Moral +3 · fatigue −15 · rencontres",
+  langue: "Une langue apprise à 100",
+  relation: "Lien +15 (à distance) ou +30",
+  couverture: "Couverture civile +30",
+  devoir: "Avancer un devoir",
+  branche: "Estime +8 et un coup de pouce",
+  legende: "Créer (2 000 €) ou consolider",
+  informateurs: "Recruter ou entretenir",
+  escouade: "Former tes seconds",
+  antenne: "Renseignement régional +2",
+  theatre: "Projets +1 · tension −2",
+  agence: "Crédit +5 ou diplomatie",
+  resister: "Sang-froid face aux aveux",
+  evasion: "Préparer l'évasion",
+  attendre: "Compter sur l'échange",
+};
+
+const GROUPS: { label: string; ids: ActivityId[] }[] = [
+  { label: "Toi", ids: ["entrainement", "cours", "langue", "repos", "loisirs"] },
+  { label: "Ta vie", ids: ["relation", "couverture", "devoir"] },
+  { label: "Le métier", ids: ["branche", "legende", "informateurs", "escouade", "antenne", "theatre", "agence"] },
+  { label: "Détention", ids: ["resister", "evasion", "attendre"] },
+];
+
+function SlotEditor({
+  index,
+  state,
+  slot,
+  picking,
+  onPick,
+  onChange,
+}: {
+  index: number;
+  state: GameState;
+  slot: ActivityChoice;
+  picking: boolean;
+  onPick: (open: boolean) => void;
+  onChange: (c: ActivityChoice) => void;
+}) {
   const def = ACTIVITIES[slot.activity];
   const pickActivity = (a: ActivityId) => {
     const target = defaultTarget(state, a);
     onChange({ activity: a, ...(target ? { target } : {}) });
+    onPick(false);
   };
   return (
-    <div className="rounded-sm border border-line bg-panel/60 p-3">
-      <p className="label mb-2">Créneau {index + 1}</p>
-      <div className="flex flex-wrap gap-1">
-        {ACTIVITY_IDS.map((a) => {
-          const blocker = activityBlocker(state, a);
-          if (blocker && statusBound(a)) return null;
-          const on = slot.activity === a;
-          return (
-            <button
-              key={a}
-              disabled={Boolean(blocker)}
-              title={blocker ?? ACTIVITIES[a].description}
-              onClick={() => pickActivity(a)}
-              className={`rounded-sm border px-2 py-1 text-[11px] transition-colors ${
-                on ? "border-brass bg-brass/15 text-brass-soft" : blocker ? "border-line text-faint/50" : "border-line text-muted hover:border-line-strong hover:text-ivory"
-              }`}
-            >
-              {ACTIVITIES[a].icon} {ACTIVITIES[a].label}
-            </button>
-          );
-        })}
+    <div className={`rounded-sm border bg-panel/60 px-3 py-2.5 transition-colors ${picking ? "border-brass" : "border-line"}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <button onClick={() => onPick(!picking)} className="group flex min-w-[12rem] flex-1 items-center gap-3 text-left" aria-expanded={picking}>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-sm border border-line-strong text-lg text-brass group-hover:border-brass">{def.icon}</span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline gap-2">
+              <span className="font-serif text-xl leading-tight">{def.label}</span>
+              <span className="text-[10px] tracking-[0.15em] text-faint uppercase">créneau {index + 1}</span>
+            </span>
+            <span className="block truncate text-[11px] text-muted">{SHORT[slot.activity]}</span>
+          </span>
+        </button>
+        {!picking && (
+          <div className="w-full sm:w-56">
+            <TargetPicker state={state} slot={slot} onChange={onChange} />
+          </div>
+        )}
+        <button onClick={() => onPick(!picking)} className="text-[10px] tracking-[0.12em] text-muted uppercase hover:text-ivory">
+          {picking ? "Fermer ✕" : "Changer"}
+        </button>
       </div>
-      <p className="mt-2 text-[11px] leading-snug text-faint">{def.description}</p>
-      <TargetPicker state={state} slot={slot} onChange={onChange} />
+      {picking && <ActivityPicker state={state} current={slot.activity} onPick={pickActivity} />}
+    </div>
+  );
+}
+
+function ActivityPicker({ state, current, onPick }: { state: GameState; current: ActivityId; onPick: (a: ActivityId) => void }) {
+  return (
+    <div className="animate-rise mt-3 grid gap-x-4 gap-y-2.5 border-t border-line pt-3 sm:grid-cols-3">
+      {GROUPS.map((g) => {
+        const ids = g.ids.filter((a) => ACTIVITY_IDS.includes(a) && !(activityBlocker(state, a) && statusBound(a)));
+        if (!ids.length) return null;
+        return (
+          <div key={g.label}>
+            <p className="label mb-1">{g.label}</p>
+            <ul className="space-y-0.5">
+              {ids.map((a) => {
+                const blocker = activityBlocker(state, a);
+                const on = a === current;
+                return (
+                  <li key={a}>
+                    <button
+                      disabled={Boolean(blocker)}
+                      onClick={() => onPick(a)}
+                      title={blocker ?? ACTIVITIES[a].description}
+                      className={`flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ${
+                        on ? "bg-brass/15 text-brass-soft" : blocker ? "text-faint/50" : "hover:bg-ivory/5"
+                      }`}
+                    >
+                      <span className="w-4 shrink-0 text-center text-brass">{ACTIVITIES[a].icon}</span>
+                      <span className="shrink-0">{ACTIVITIES[a].label}</span>
+                      <span className="min-w-0 flex-1 truncate text-right text-[10px] text-faint">{blocker ?? SHORT[a]}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -224,7 +288,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
     const seatSkills = new Set(findSeat(c.identity.agency, c.seat)?.specialty ?? []);
     return (
       <>
-        <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
           {def.target === "academic"
             ? ACADEMIC_SKILLS.map((s) => (
                 <option key={s} value={s}>
@@ -249,7 +313,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   if (def.target === "relation") {
     const here = state.world.cityId;
     return (
-      <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+      <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
         {activeRelations(state).map((r) => (
           <option key={r.name} value={r.name}>
             {r.name} — lien {r.bond ?? 50} — {r.cityId === here ? "sur place" : r.cityId ? `à distance (${findCity(r.cityId)?.name})` : "à distance"}
@@ -260,7 +324,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   }
   if (def.target === "duty") {
     return (
-      <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+      <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
         {state.duties
           .filter((d) => d.status === "ouvert" && d.activity === "devoir")
           .map((d) => (
@@ -276,7 +340,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
     const favor = b ? branchFavor(state, b.id) : 0;
     return (
       <>
-        <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
           {agency.branches.map((x) => (
             <option key={x.id} value={x.id}>
               {x.name} — estime {branchFavor(state, x.id) > 0 ? "+" : ""}
@@ -297,7 +361,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
     const rest = ALL_LANGUAGES.filter((l) => !c.spoken.includes(l) && !(l in (c.learning ?? {})));
     return (
       <>
-        <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
           {learning.length > 0 && (
             <optgroup label="En cours">
               {learning.map(([l, v]) => (
@@ -324,7 +388,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
     const canCreate = c.legends.length < cap;
     return (
       <>
-        <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
           {canCreate && <option value="">Construire une nouvelle légende ({formatEuros(LEGEND_COST)})</option>}
           {c.legends.map((l) => (
             <option key={l.id} value={l.id}>
@@ -343,7 +407,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
     const cities = CITIES.filter((x) => !x.tags?.includes("secret") && findCountry(x.country)?.bloc !== "hostile").sort((a, b) => a.name.localeCompare(b.name, "fr"));
     return (
       <>
-        <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
           <option value="">Entretenir le réseau ({active} informateur{active > 1 ? "s" : ""})</option>
           {active < assetCap(c.rank) &&
             cities.map((x) => (
@@ -361,7 +425,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   if (def.target === "agency") {
     const others = (["argos", "meridian", "monsoon"] as AgencyId[]).filter((a) => a !== c.identity.agency);
     return (
-      <select className="field mt-2 py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+      <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
         <option value="">Rassurer les gouvernements membres</option>
         {others.map((a) => (
           <option key={a} value={a}>
@@ -374,7 +438,7 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   return null;
 }
 
-function Duties({ state }: { state: GameState }) {
+export function Duties({ state }: { state: GameState }) {
   const open = state.duties.filter((d) => d.status === "ouvert").sort((a, b) => a.dueDay - b.dueDay);
   const recent = state.duties.filter((d) => d.status !== "ouvert").slice(-4).reverse();
   return (
@@ -430,7 +494,7 @@ const AGENDA_KIND: Record<string, { label: string; color: string }> = {
 };
 
 /** Les grands rendez-vous des quatre prochains mois : calendrier réel et vie du Concordat. */
-function Agenda({ state }: { state: GameState }) {
+export function Agenda({ state }: { state: GameState }) {
   const list = upcoming(state, 120).sort((a, b) => a.inDays - b.inDays);
   return (
     <section>
@@ -438,16 +502,16 @@ function Agenda({ state }: { state: GameState }) {
       {list.length === 0 ? (
         <p className="text-xs text-faint italic">Rien d'inscrit au calendrier.</p>
       ) : (
-        <ul className="grid gap-2 sm:grid-cols-2">
+        <ul className="space-y-1.5">
           {list.map(({ event, start, inDays }) => {
             const kind = AGENDA_KIND[event.kind];
             const city = findCity(event.cityId);
             return (
-              <li key={`${event.id}-${start}`} className="flex items-baseline gap-3 rounded-sm border border-line bg-panel/40 px-3 py-2">
+              <li key={`${event.id}-${start}`} className="flex items-baseline gap-3 rounded-sm border border-line bg-panel/40 px-3 py-1.5">
                 <span className="w-16 shrink-0 font-mono text-[10px] text-muted">{inDays <= 0 ? "en cours" : `J−${inDays}`}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{event.name}</span>
-                  <span className="text-[10px] text-faint">
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {event.name}
+                  <span className="ml-2 text-[10px] text-faint">
                     {formatDate(start)}
                     {city ? ` · ${city.name}` : ""}
                   </span>
@@ -474,7 +538,7 @@ const CATEGORY_LABELS: Record<PossessionDef["category"], string> = {
 };
 
 /** L'économie personnelle : acheter, entretenir, résilier. */
-function Possessions({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
+export function Possessions({ state, onChange, compact = false }: { state: GameState; onChange?: (s: GameState) => void; compact?: boolean }) {
   const c = state.character;
   const [error, setError] = useState<string | null>(null);
   const cadet = c.rank === "prospect" || c.rank === "aspirant";
@@ -498,7 +562,7 @@ function Possessions({ state, onChange }: { state: GameState; onChange?: (s: Gam
         Ta solde paie ta vie : logement, véhicule, garde-robe, cours, aide à ta famille. L'entretien est prélevé chaque semaine ; ce que tu ne peux plus payer est perdu. Revendre rend la moitié du prix.
       </p>
       {error && <p className="mb-2 text-xs text-fail">{error}</p>}
-      <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      <ul className={`grid gap-2 ${compact ? "" : "md:grid-cols-2 xl:grid-cols-3"}`}>
         {POSSESSIONS.map((p) => {
           const mine = owns(state, p.id);
           const locked = Boolean(p.minRank) && cadet;
