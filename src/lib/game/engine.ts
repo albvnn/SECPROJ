@@ -58,6 +58,8 @@ import type {
 import { addDays, addYears, ageAt, isoDate } from "./calendar";
 import { commandOnPromotion, emptyCommand } from "./command";
 import { injuryMalus } from "./field";
+import { bodyMod, initialBody } from "./body";
+import { pushLedger } from "./ledger";
 import { clearanceDef, clearanceOf } from "./intel";
 import { generateRoster } from "./roster";
 import { findCity, findCountryByName, matchCity, CITIES as MAP_CITIES } from "@/lib/world/geo";
@@ -170,6 +172,7 @@ export function createGameState(draft: CharacterDraft): GameState {
     legends: [],
     heat: {},
     injuries: [],
+    body: initialBody(draft),
     spoken: parseLanguages(draft.identity.languages),
     learning: {},
     possessions: [],
@@ -321,6 +324,7 @@ export function normalizeState(s: GameState): GameState {
       legends: s.character.legends ?? [],
       heat: s.character.heat ?? {},
       injuries: s.character.injuries ?? [],
+      body: s.character.body ?? initialBody(s.character),
       spoken: s.character.spoken ?? parseLanguages(s.character.identity.languages),
       learning: s.character.learning ?? {},
       possessions: s.character.possessions ?? [],
@@ -477,6 +481,11 @@ export function performCheck(
   if (c.morale <= LOW_THRESHOLD) {
     bonus -= 1;
     breakdown.push("Moral en berne −1");
+  }
+  const physique = bodyMod(c, s);
+  if (physique) {
+    bonus += physique.value;
+    breakdown.push(`${physique.label} ${signed(physique.value)}`);
   }
   const wound = injuryMalus(c, s);
   if (wound) {
@@ -855,6 +864,7 @@ export function applyUpdate(
     const allowance = RANKS[c.rank].allowance;
     if (weeks > 0 && allowance > 0 && w.phase !== "apres") {
       c.money += weeks * allowance;
+      c.ledger = pushLedger(c.ledger, w.day, `Solde versée (${weeks} sem.)`, weeks * allowance);
       notices.push(`Solde : +${formatEuros(weeks * allowance)} (${weeks} semaine${weeks > 1 ? "s" : ""})`);
     }
     notices.push(days === 1 ? "Un jour passe." : `${days} jours passent.`);
@@ -905,7 +915,7 @@ export function applyUpdate(
     if (m < 0 && c.money + m < 0)
       rejected.push(`dépense refusée : ${formatEuros(-m)} demandés, la solde n'en contient que ${formatEuros(c.money)}`);
     else {
-      c = { ...c, money: c.money + m };
+      c = { ...c, money: c.money + m, ledger: pushLedger(c.ledger, w.day, u.argent.motif.slice(0, 60), m) };
       notices.push(`${m > 0 ? "+" : "−"}${formatEuros(Math.abs(m))} — ${u.argent.motif.slice(0, 80)} (solde : ${formatEuros(c.money)})`);
     }
   }
@@ -933,7 +943,7 @@ export function applyUpdate(
       rejected.push(`achat « ${a.nom} » refusé : ${formatEuros(price)}, il n'y a que ${formatEuros(balance)}`);
     else {
       const item = toItem(a, carriedCount(c) < CARRY_LIMIT);
-      c = { ...c, inventory: [...c.inventory, item], ...(fromMission ? { missionFunds: c.missionFunds - price } : { money: c.money - price }) };
+      c = { ...c, inventory: [...c.inventory, item], ...(fromMission ? { missionFunds: c.missionFunds - price } : { money: c.money - price, ledger: pushLedger(c.ledger, w.day, `Achat : ${item.name}`, -price) }) };
       notices.push(`Obtenu : ${item.name} (acheté ${formatEuros(price)})${item.carried ? "" : " — rangé au casier, tu portes déjà trop"}`);
     }
   }

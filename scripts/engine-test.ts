@@ -11,6 +11,7 @@ import { eventsBetween } from "../src/lib/world/agenda";
 import type { GameState } from "../src/lib/game/types";
 import { clearance, operativeKnown, operativeListed, threatVisible } from "../src/lib/game/intel";
 import { fileRequest, sourceOffers } from "../src/lib/game/sources";
+import { bodyMod, bodyStats, bodyWeek, heightAt, initialBody, muscleCap, scarsFrom } from "../src/lib/game/body";
 
 let failures = 0;
 const check = (label: string, ok: boolean, extra = "") => {
@@ -240,6 +241,31 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   const doubted = missionAllowance({ ...base, character: { ...base.character, reputation: 5, blames: 3 } }, offer);
   check("dotation : la confiance de la hiérarchie compte", trusted.funds > doubted.funds && trusted.trust > doubted.trust, `×${doubted.trust.toFixed(2)} → ×${trusted.trust.toFixed(2)}`);
   check("dotation : chaque ligne s'explique", world.lines.length >= 3);
+}
+
+// Le corps : l'entraînement physique construit, l'inaction défait, les blessures marquent.
+{
+  const base = { ...s, character: { ...s.character, prison: null, injuries: [], body: initialBody(s.character) } };
+  const age = 18;
+  const start = bodyStats(base.character, age);
+  check("corps : taille et poids plausibles", start.height > 145 && start.height < 200 && start.weight > 40 && start.weight < 110, `${start.height} cm, ${start.weight} kg`);
+  const physical = ["force", "endurance", "athletisme"].map((target) => ({ activity: "entrainement" as const, target }));
+  let fit = base.character;
+  for (let i = 0; i < 6; i++) fit = { ...fit, body: bodyWeek(fit, physical, { prison: false, fatigue: 30 }).body };
+  let idle = base.character;
+  for (let i = 0; i < 6; i++) idle = { ...idle, body: bodyWeek(idle, [{ activity: "repos" }, { activity: "loisirs" }, { activity: "repos" }], { prison: false, fatigue: 10 }).body };
+  check("corps : l'entraînement physique fait du muscle", fit.body!.muscle > base.character.body!.muscle && fit.body!.fat < base.character.body!.fat, `${base.character.body!.muscle} → ${fit.body!.muscle}`);
+  check("corps : l'inaction en défait", idle.body!.muscle < base.character.body!.muscle && idle.body!.fat > base.character.body!.fat);
+  check("corps : jamais au-delà du potentiel", fit.body!.muscle <= muscleCap(fit) + 0.01);
+  const young = heightAt(base.character.body!, "garcon", 15);
+  check("corps : on grandit jusqu'à 18 ans", young < heightAt(base.character.body!, "garcon", 18));
+  const cut = { id: "x", name: "Bras entaillé", description: "", malus: { combat: -1 }, healDay: 5 };
+  const healed = scarsFrom(base.character, [cut], 10);
+  check("corps : une blessure guérie laisse une cicatrice au bon endroit", healed.scars.length === 1 && healed.scars[0].zone.startsWith("bras"));
+  const strong = { ...base.character, body: { ...base.character.body!, muscle: 80 } };
+  check("corps : la carrure aide en force", bodyMod(strong, "force")?.value === 1 && bodyMod(strong, "logique") === null);
+  const wk = resolveWeek({ ...base, world: { ...base.world, restUntil: base.world.day } }, defaultPlan(base), rng);
+  check("corps : la semaine fait évoluer le corps", wk.state.character.body?.prev !== undefined);
 }
 
 // Migration d'une sauvegarde v3.

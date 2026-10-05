@@ -20,6 +20,8 @@ import { weeklyAgenda } from "@/lib/world/agenda";
 import { satisfactionOf, weeklyThreats } from "@/lib/world/threats";
 import { addNews, shiftDiplomacy, shiftTension, weeklyWorld } from "@/lib/world/world";
 import { resolveRequests } from "./sources";
+import { bodyWeek } from "./body";
+import { pushLedger } from "./ledger";
 
 export const SLOTS = 3;
 
@@ -391,7 +393,7 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
           const logistics = AGENCIES[c.identity.agency].branches.find((b) => b.kind === "logistique");
           const credibility = Math.min(90, 40 + Math.max(0, Math.round(branchFavor(state, logistics?.id ?? "") / 4)));
           const legend = createLegend(state.character, day, credibility, rng);
-          state = { ...state, character: { ...state.character, money: state.character.money - LEGEND_COST, legends: [...cur, legend] } };
+          state = { ...state, character: { ...state.character, money: state.character.money - LEGEND_COST, legends: [...cur, legend], ledger: pushLedger(state.character.ledger, day, `Légende : ${legend.name}`, -LEGEND_COST) } };
           lines.push(`Nouvelle légende : ${legend.name}, ${legend.profession} (${legend.nationality}), crédibilité ${credibility}.`);
           notices.push(`Nouvelle légende : ${legend.name}`);
         }
@@ -572,6 +574,13 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
   if (cover < 30 && (initial.character.cover ?? 70) >= 30) notices.push("Ta couverture civile se fissure");
   state = { ...state, character: { ...state.character, fatigue, cover } };
 
+  // Le corps suit : l'entraînement physique construit, l'inaction et les blessures défont.
+  {
+    const b = bodyWeek(state.character, plan, { prison: Boolean(state.character.prison), fatigue });
+    state = { ...state, character: { ...state.character, body: b.body } };
+    notices.push(...b.notices);
+  }
+
   // Les liens s'usent sans nouvelles.
   let neglected: Relation | undefined;
   state = {
@@ -623,7 +632,7 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
       }
       return next;
     });
-    state = { ...state, character: { ...state.character, money }, command: { ...state.command, assets } };
+    state = { ...state, character: { ...state.character, money, ledger: pushLedger(state.character.ledger, state.world.day, "Informateurs", money - state.character.money) }, command: { ...state.command, assets } };
   }
 
   // L'effectif vit sa vie : missions du Cercle, sièges vacants, cadets brevetés.

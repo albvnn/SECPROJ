@@ -34,6 +34,7 @@ import { worldSummary } from "@/lib/world/world";
 import { threatsSummary } from "@/lib/world/threats";
 import { clearance, clearanceDef, threatVisible } from "@/lib/game/intel";
 import { findPossession } from "@/lib/game/economy";
+import { bodyLine } from "@/lib/game/body";
 import { daysBetween, formatDate } from "@/lib/game/calendar";
 import type { GameState, LogEntry, PhaseId, PlayerAction } from "@/lib/game/types";
 
@@ -113,6 +114,7 @@ export function characterSheet(state: GameState): string {
       dateOfAge(state, age + 1) ? ` — aura ${age + 1} ans le ${formatDate(dateOfAge(state, age + 1)!)}` : ""
     }`,
     `Apparence : ${id.appearance || "non précisée"}`,
+    `Physique (évolue avec l'entraînement et les blessures ; ne le contredis pas) : ${bodyLine(c, age)}`,
     `Langues : ${id.languages || "—"}`,
     `Origine : ${origin?.label ?? c.originId} — ${origin?.description ?? ""}`,
     `Drame fondateur : ${drama?.label ?? c.dramaId} — ${drama?.description ?? ""}`,

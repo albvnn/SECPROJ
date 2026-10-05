@@ -196,6 +196,10 @@ export interface Character {
   heat: Record<string, number>;
   /** Blessures en cours et séquelles. */
   injuries: Injury[];
+  /** Le corps : il change avec l'entraînement, le repos, les blessures. */
+  body?: Body;
+  /** Le relevé de compte. */
+  ledger?: LedgerEntry[];
   /** Langues parlées, et apprentissage en cours (0 à 100). */
   spoken: string[];
   learning: Record<string, number>;
@@ -229,6 +233,27 @@ export interface Legend {
   /** Pays où elle est grillée (noms). */
   burned: string[];
   createdDay: number;
+}
+
+export interface LedgerEntry {
+  day: number;
+  label: string;
+  amount: number;
+}
+
+export type BodyZone = "tete" | "torse" | "abdomen" | "bras_g" | "bras_d" | "main_g" | "main_d" | "jambe_g" | "jambe_d";
+
+export interface Body {
+  /** Taille adulte visée (cm) : on grandit jusqu'à 16-18 ans. */
+  adultHeight: number;
+  /** Musculature (0 à 100). */
+  muscle: number;
+  /** Masse grasse (%). */
+  fat: number;
+  /** Ce que les blessures ont laissé. */
+  scars: { zone: BodyZone; name: string; day: number }[];
+  /** Les valeurs de la semaine précédente, pour les tendances. */
+  prev?: { muscle: number; fat: number };
 }
 
 /** Une blessure : un malus sur certaines compétences jusqu'à guérison (ou à vie : une séquelle). */

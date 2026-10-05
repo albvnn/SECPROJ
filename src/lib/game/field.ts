@@ -4,6 +4,7 @@
  */
 import { pick, randInt, uid, type Rng } from "./rng";
 import { randomName } from "./names";
+import { scarsFrom } from "./body";
 import type { Character, GameState, Injury, Legend, NodeType, Prison, SkillId } from "./types";
 import { CITIES, findCity, findCountry, type CityDef } from "@/lib/world/geo";
 
@@ -48,18 +49,20 @@ export function injuryMalus(c: Pick<Character, "injuries">, skill: SkillId): num
 }
 
 /** Les blessures guérissent avec le temps (plus vite avec du repos). */
-export function healInjuries(c: Character, day: number, rested: boolean): { character: Character; healed: string[] } {
+export function healInjuries(c: Character, day: number, rested: boolean): { character: Character; healed: string[]; healedInjuries: Injury[] } {
   const healed: string[] = [];
+  const healedInjuries: Injury[] = [];
   const injuries = c.injuries
     .map((i) => (i.healDay && rested ? { ...i, healDay: i.healDay - 4 } : i))
     .filter((i) => {
       if (i.healDay !== undefined && i.healDay <= day) {
         healed.push(i.name);
+        healedInjuries.push(i);
         return false;
       }
       return true;
     });
-  return { character: { ...c, injuries }, healed };
+  return { character: { ...c, injuries, body: healedInjuries.length ? scarsFrom(c, healedInjuries, day) : c.body }, healed, healedInjuries };
 }
 
 /* ------------------------------------------------------------------ */

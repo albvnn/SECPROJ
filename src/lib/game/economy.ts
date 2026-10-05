@@ -1,6 +1,7 @@
 /**
  * L'économie personnelle : ce que la solde permet d'acheter, et ce que ça coûte chaque semaine.
  */
+import { pushLedger } from "./ledger";
 import type { GameState, SkillId } from "./types";
 
 export interface PossessionDef {
@@ -57,7 +58,7 @@ export function buyPossession(state: GameState, id: string): GameState {
   const cost = p.price + p.upkeep;
   if (c.money < cost) throw new Error(`Il faut ${cost} € (achat et première semaine).`);
   const possessions = [...(c.possessions ?? []).filter((x) => !(p.replaces ?? []).includes(x)), id];
-  return { ...state, character: { ...c, money: c.money - cost, possessions }, updatedAt: Date.now() };
+  return { ...state, character: { ...c, money: c.money - cost, possessions, ledger: pushLedger(c.ledger, state.world.day, `Achat : ${p.name}`, -cost) }, updatedAt: Date.now() };
 }
 
 /** Revendre (à moitié prix) ou résilier. */
@@ -65,7 +66,11 @@ export function sellPossession(state: GameState, id: string): GameState {
   const p = findPossession(id);
   const c = state.character;
   if (!p || !owns(state, id)) return state;
-  return { ...state, character: { ...c, money: c.money + Math.round(p.price / 2), possessions: c.possessions.filter((x) => x !== id) }, updatedAt: Date.now() };
+  return {
+    ...state,
+    character: { ...c, money: c.money + Math.round(p.price / 2), possessions: c.possessions.filter((x) => x !== id), ledger: pushLedger(c.ledger, state.world.day, `Revente : ${p.name}`, Math.round(p.price / 2)) },
+    updatedAt: Date.now(),
+  };
 }
 
 /** Bonus de jet apporté par les biens pour cette compétence. */
@@ -92,5 +97,9 @@ export function payUpkeep(state: GameState): { state: GameState; notices: string
     } else notices.push(`Impayé : tu perds ${p.name}`);
   }
   const spent = c.money - money;
-  return { state: { ...state, character: { ...c, money, possessions: kept } }, notices, lines: spent ? [`Dépenses de la semaine : −${spent} €.`] : [] };
+  return {
+    state: { ...state, character: { ...c, money, possessions: kept, ledger: pushLedger(c.ledger, state.world.day, "Entretien de tes biens", -spent) } },
+    notices,
+    lines: spent ? [`Dépenses de la semaine : −${spent} €.`] : [],
+  };
 }
