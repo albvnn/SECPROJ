@@ -160,7 +160,7 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   const card = wk.cards[0];
   check("carte : bilan de semaine", card?.type === "semaine" && card.plan.length === 3 && card.toDay === card.fromDay + 7);
   t = { ...wk.state, world: { ...wk.state.world, restUntil: wk.state.world.day } };
-  t = { ...t, character: { ...t.character, reputation: Math.max(20, t.character.reputation) }, offers: [makeOffer(t, rng)] };
+  t = { ...t, offers: [makeOffer(t, rng)] };
   const go = runEngineAction(t, { type: "mission_start", offer: t.offers[0].id, team: [], gadgets: [] }, roll, rng)!;
   check("carte : ordre de mission", go.cards[0]?.type === "briefing" && go.cards[0].steps.length === go.state.mission!.nodes.length);
   t = go.state;
@@ -200,8 +200,11 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   const favor = t.command.branchFavor.bibliotheque ?? 0;
   t = fileRequest(t, "region", "oceanie", { source: "analyse" }, rng);
   check("demande déposée : estime de la Bibliothèque entamée", t.knowledge.requests.length === 1 && (t.command.branchFavor.bibliotheque ?? 0) < favor);
-  t = { ...t, offers: [makeOffer(t, rng)] };
-  check("la hiérarchie répond sur ses propres missions", sourceOffers(t, "reperages", t.offers[0].id).some((o) => o.source === "hierarchie" && !o.blocker));
+  t = { ...t, character: { ...t.character, reputation: Math.max(20, t.character.reputation) }, offers: [makeOffer(t, rng)] };
+  {
+    const h = sourceOffers(t, "reperages", t.offers[0].id).find((o) => o.source === "hierarchie");
+    check("la hiérarchie répond sur ses propres missions", Boolean(h && !h.blocker), h?.blocker ?? "absente");
+  }
   t = fileRequest(t, "reperages", t.offers[0].id, { source: "analyse" }, rng);
   check("deux questions à l'analyse au plus à ce niveau", analyse("menace", far.id).blocker?.includes("au plus") === true);
   // Pour le test, les sources disent vrai.
@@ -215,7 +218,14 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
     const planned = t.knowledge.recon[offerId].map((n) => n.title);
     const go = startMission({ ...t, world: { ...t.world, restUntil: t.world.day } }, offerId, [], [], rng).state;
     const real = go.mission!.nodes.map((n) => n.title);
-    check("repérages : les étapes prévues sont les vraies", planned.every((title) => real.some((r) => r === title.replace(/\{cover\}/g, go.mission!.cover))), `${planned.length} étapes`);
+    check(
+      "repérages : les étapes prévues sont les vraies",
+      planned
+        // En territoire hostile, l'arrivée devient une insertion clandestine au moment du départ.
+        .slice(real[0] === "Insertion clandestine" ? 1 : 0)
+        .every((title) => real.some((r) => r === title.replace(/\{cover\}/g, go.mission!.cover))),
+      `${planned.length} étapes`,
+    );
   } else check("repérages : la mission a expiré entre-temps", true, "offre expirée");
 }
 
