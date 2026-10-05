@@ -23,6 +23,7 @@ import { resolveRequests } from "./sources";
 import { bodyWeek } from "./body";
 import { pushLedger } from "./ledger";
 import { syncWithRoster, weeklyBonds } from "./bonds";
+import { weeklyPost } from "./post";
 
 export const SLOTS = 3;
 
@@ -849,6 +850,14 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
   cover = Math.max(0, Math.min(100, cover));
   if (cover < 30 && (initial.character.cover ?? 70) >= 30) notices.push("Ta couverture civile se fissure");
   state = { ...state, character: { ...state.character, fatigue, cover } };
+
+  // Le poste : responsabilités tenues ou négligées, échelons.
+  {
+    const p = weeklyPost(state, plan, day);
+    state = { ...state, post: p.post, character: { ...state.character, reputation: Math.max(0, Math.min(100, state.character.reputation + p.reputation)) } };
+    notices.push(...p.notices);
+    lines.push(...p.lines);
+  }
 
   // Le corps suit : l'entraînement physique construit, l'inaction et les blessures défont.
   {

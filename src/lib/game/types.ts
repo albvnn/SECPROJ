@@ -235,6 +235,21 @@ export interface Legend {
   createdDay: number;
 }
 
+/** Le poste occupé : états de service, échelon, responsabilités tenues. */
+export interface PostState {
+  id: string;
+  points: number;
+  echelon: number;
+  /** Jour de la prise de poste. */
+  since: number;
+  /** Jours où chaque responsabilité a été tenue. */
+  done: Record<string, number[]>;
+  /** Jour du dernier bilan mensuel. */
+  lastReview: number;
+  /** États de service gagnés dans ce poste, au total. */
+  total?: number;
+}
+
 export interface LedgerEntry {
   day: number;
   label: string;
@@ -1020,6 +1035,8 @@ export interface GameState {
   log: LogEntry[];
   choices: Choice[];
   settings: { narration: NarrationMode; pace: Pace; span?: number | "auto" };
+  /** Le poste et ses échelons. */
+  post?: PostState | null;
   scene: Scene | null;
   /** Tours joués depuis le début de la phase en cours. */
   phaseTurns: number;

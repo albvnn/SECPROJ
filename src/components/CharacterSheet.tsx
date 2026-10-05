@@ -33,6 +33,7 @@ import { PoleEmblem, SkillChips, SkillGlyph } from "./glyphs";
 import { Silhouette } from "./Mallette";
 import { BranchTiles, LanguageChips, MeritGauge, NextSteps, Passports, PoleRadar, RankLadder, TraitBadges, WatchList } from "./SheetVisuals";
 import { SeatSigil } from "./sigils";
+import { postLine } from "@/lib/game/post";
 import { RankBadge } from "./ui";
 import { findCity, findCountry } from "@/lib/world/geo";
 
@@ -470,6 +471,7 @@ function AgentTab({ state, onOpenPromotion, onOpenArchives }: { state: GameState
         <div className="mt-3">
           <MeritGauge state={state} />
         </div>
+        {postLine(state) && <p className="mt-2 border-t border-line pt-2 text-[11px] text-muted">Poste : {postLine(state)}</p>}
       </div>
       <NextSteps state={state} />
       {onOpenPromotion && (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ActivityChoice, GameState, PlayerAction } from "@/lib/game/types";
 import { Debrief, MissionsList, MissionTrack, Preparation } from "./Operations";
+import { PostPanel } from "./PostPanel";
 import { Agenda, Duties, PrisonBanner, StatusStrip, WeekSlots } from "./WeekPlanner";
 
 /**
@@ -71,6 +72,7 @@ export function HQ({
     <div className="space-y-8">
       {prison && <PrisonBanner state={state} />}
       <StatusStrip state={state} />
+      {!prison && <PostPanel state={state} plan={plan} />}
 
       <div className={`grid gap-8 ${prison ? "" : "lg:grid-cols-[minmax(0,1fr)_22rem]"}`}>
         <WeekSlots

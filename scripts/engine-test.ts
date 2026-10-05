@@ -12,6 +12,7 @@ import { eventsBetween } from "../src/lib/world/agenda";
 import type { GameState } from "../src/lib/game/types";
 import { clearance, operativeKnown, operativeListed, threatVisible } from "../src/lib/game/intel";
 import { fileRequest, sourceOffers } from "../src/lib/game/sources";
+import { currentPost, postOf } from "../src/lib/game/post";
 import { romancePossible, syncWithRoster, weeklyBonds } from "../src/lib/game/bonds";
 import { bodyMod, bodyStats, bodyWeek, heightAt, initialBody, muscleCap, scarsFrom } from "../src/lib/game/body";
 
@@ -324,6 +325,22 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
     check("activités : instruire, réservé aux titulaires", planError(officer, plan) !== null && planError(holder, plan) === null);
   }
   check("activités : une variante est exigée", planError(base, [{ activity: "sport" }, { activity: "repos" }, { activity: "repos" }]) !== null);
+}
+
+// Le poste : responsabilités et échelons.
+{
+  const base = { ...s, character: { ...s.character, prison: null, rank: "agent" as const, fatigue: 0 }, post: null, world: { ...s.world, restUntil: s.world.day } };
+  check("poste : un officier a ses responsabilités", postOf(base)?.id === "officier" && postOf(base)!.responsibilities.length >= 3);
+  let good = base as GameState;
+  const diligent = [{ activity: "sport" as const, target: "cardio" }, { activity: "veille" as const, target: "europe" }, { activity: "job" as const }];
+  for (let i = 0; i < 6; i++) good = resolveWeek(good, diligent, rng).state;
+  let lazy = base as GameState;
+  const idle = [{ activity: "repos" as const }, { activity: "loisirs" as const }, { activity: "repos" as const }];
+  for (let i = 0; i < 6; i++) lazy = resolveWeek(lazy, idle, rng).state;
+  check("poste : tenir ses responsabilités fait monter d'échelon", (good.post?.points ?? 0) >= 8 && (good.post?.echelon ?? 0) >= 1, `${good.post?.points} états de service`);
+  check("poste : les négliger ne rapporte rien et coûte en réputation", (lazy.post?.points ?? 0) === 0 && lazy.character.reputation <= base.character.reputation);
+  const holder = { ...base, character: { ...base.character, rank: "titulaire" as const } };
+  check("poste : changer de grade, c'est changer de poste", postOf(holder)?.id === "titulaire" && currentPost({ ...holder, post: good.post })!.points === 0);
 }
 
 // Le rythme : plusieurs semaines d'affilée, avec des arrêts sur ce qui compte.
