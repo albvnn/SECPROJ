@@ -32,7 +32,7 @@ function targetLabel(state: GameState, p: ActivityChoice): string | undefined {
 }
 
 /** Le bilan d'une semaine jouée : les trois créneaux, ce qui a bougé, et le détail. */
-export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean, weeks = 1, stop: string | null = null): StoryCard {
+export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean, weeks = 1, stop: string | null = null, momentous = false): StoryCard {
   const a = before.character;
   const b = after.character;
   const deltas: { label: string; value: number; unit?: string; good: boolean }[] = [];
@@ -61,6 +61,7 @@ export function weekCard(before: GameState, after: GameState, plan: ActivityChoi
     event,
     weeks,
     stop,
+    ...(momentous ? { momentous } : {}),
   };
 }
 

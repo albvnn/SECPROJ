@@ -74,9 +74,10 @@ export function schedule(state: GameState, horizon = 120): ScheduleItem[] {
   const birth = state.character.identity.birthDate;
   if (birth) {
     const now = parseIso(dayToIso(state, today));
-    for (const y of [now.getUTCFullYear(), now.getUTCFullYear() + 1]) {
-      const iso = `${y}${birth.slice(4)}`;
-      push({ day: isoToDay(state, iso), kind: "perso", title: "Ton anniversaire", detail: `${y - Number(birth.slice(0, 4))} ans` });
+    // Toujours au calendrier, même au-delà de l'horizon : cette année et les deux suivantes.
+    for (const y of [now.getUTCFullYear(), now.getUTCFullYear() + 1, now.getUTCFullYear() + 2]) {
+      const day = isoToDay(state, `${y}${birth.slice(4)}`);
+      if (day >= today) items.push({ day, date: dayToIso(state, day), kind: "perso", title: "Ton anniversaire", detail: `${y - Number(birth.slice(0, 4))} ans` });
     }
   }
 

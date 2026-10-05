@@ -180,22 +180,31 @@ export function runEngineAction(state: GameState, action: PlayerAction, roll: ()
   switch (action.type) {
     case "week": {
       const r = resolvePeriod(state, action.plan, action.span ?? 1, rng);
-      const span = r.weeks > 1 ? `${r.weeks} SEMAINES VIENNENT DE PASSER` : "UNE SEMAINE VIENT DE PASSER";
+      const span = r.weeks > 4 ? `${r.weeks} SEMAINES (ENVIRON ${Math.max(2, Math.round(r.weeks / 4.33))} MOIS) VIENNENT DE PASSER` : r.weeks > 1 ? `${r.weeks} SEMAINES VIENNENT DE PASSER` : "UNE SEMAINE VIENT DE PASSER";
       const notices = [...new Set(r.notices)];
       const facts = [
         `${span} (jours ${state.world.day} → ${r.state.world.day}), résolue${r.weeks > 1 ? "s" : ""} par le jeu :`,
         ...r.lines.map((l) => `- ${l}`),
         ...notices.filter((n) => !r.lines.some((l) => l.includes(n))).map((n) => `- ${n}`),
-        r.weeks > 1 ? `\nRaconte la période en accéléré (quelques moments choisis, le temps qui file), puis ralentis sur ce qui l'a interrompue.` : "",
+        r.weeks > 4
+          ? `\nRaconte la période comme une CHRONIQUE : la vie continue, mois par mois (deux ou trois phrases chacun : le quotidien, les gens, le corps qui change, l'argent, ce qui a mûri), sans scène ni dialogue. Puis ralentis net sur ce qui l'a interrompue.`
+          : r.weeks > 1
+            ? `\nRaconte la période en accéléré (quelques moments choisis, le temps qui file), puis ralentis sur ce qui l'a interrompue.`
+            : "",
         r.stop ? `Le temps s'est arrêté : ${r.stop}.` : "",
         r.birthday
-          ? `\nANNIVERSAIRE : le personnage a eu ${r.birthday.age} ans (${r.birthday.date}). Marque le coup par une courte scène : qui y pense, qui l'oublie, ce que cet âge change.`
+          ? `\nANNIVERSAIRE : le personnage a eu ${r.birthday.age} ans (${r.birthday.date}). Marque le coup par une scène : qui y pense, qui l'oublie, ce que cet âge change.`
           : "",
         r.event ? `\nÉVÉNEMENT (à jouer en scène) : ${r.event}` : "\nPas d'événement particulier.",
+        r.momentous
+          ? `\nTEMPS FORT : on change d'échelle. Joue-le sur PLUSIEURS TOURS (3 à 6), heure par heure, jour par jour (jours_ecoules 0 ou 1 par tour) : ne le résous pas dans ce tour, termine sur une décision du joueur. Ne propose pas d'ellipse avant qu'il soit vraiment clos.`
+          : r.event
+            ? `\nPetit événement : une scène courte (1 ou 2 tours), puis rends la main (choix « ellipse » pour revenir au planning).`
+            : "",
       ]
         .filter(Boolean)
         .join("\n");
-      const cards = [weekCard(state, r.state, action.plan, r.lines, Boolean(r.event), r.weeks, r.stop)];
+      const cards = [weekCard(state, r.state, action.plan, r.lines, Boolean(r.event), r.weeks, r.stop, r.momentous)];
       if (r.birthday) cards.push(birthdayCard(r.state, r.birthday.age, r.birthday.date));
       return { state: r.state, notices, checks: [], facts, label, expectChoices: Boolean(r.event || r.birthday), cards };
     }

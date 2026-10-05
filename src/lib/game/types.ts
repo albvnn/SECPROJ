@@ -326,6 +326,8 @@ export interface World {
   cityId: string;
   /** Pas de nouvelle mission avant ce jour (récupération). */
   restUntil: number;
+  /** Jour de la dernière Opération Jeunesse proposée (les cadets n'en ont qu'une par saison environ). */
+  lastYouthOffer?: number;
   /** Tensions par région, diplomatie entre agences, dépêches. */
   geo: WorldGeo;
 }
@@ -447,6 +449,8 @@ export type StoryCard =
       weeks?: number;
       /** Pourquoi le temps s'est arrêté plus tôt. */
       stop?: string | null;
+      /** Ce qui a arrêté le temps se joue lentement, sur plusieurs tours. */
+      momentous?: boolean;
     }
   | {
       type: "anniversaire";
@@ -869,6 +873,8 @@ export interface WeekReport {
   lines: string[];
   /** Événement de la semaine, mis en scène par le narrateur. */
   event?: string;
+  /** Un temps fort (Conseil, Jeux, menace sur la maison…) : il arrête le temps et se joue en scène. */
+  major?: boolean;
 }
 
 /* ------------------------------------------------------------------ */

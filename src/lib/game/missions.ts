@@ -1824,12 +1824,15 @@ export function refreshOffers(state: GameState, rng: Rng = Math.random): { state
   }
   const eligible = state.world.phase === "base" && !state.mission && day >= state.world.restUntil && !canStartMission(state);
   if (eligible && offers.length === 0) {
-    // Cadets : une Opération Jeunesse de temps en temps seulement.
+    // Cadets : une Opération Jeunesse de temps en temps seulement (environ une par trimestre).
     const youth = c.rank === "aspirant";
-    if (!youth || chance(0.35, rng)) {
+    // Et jamais deux à moins de deux mois d'écart.
+    const rested = day - (state.world.lastYouthOffer ?? -999) >= 60;
+    if (!youth || (rested && chance(0.12, rng))) {
       const count = youth ? 1 : OFFER_COUNT(c.rank);
       for (let i = 0; i < count; i++) offers.push(makeOffer(state, rng));
       notices.push(youth ? "Une Opération Jeunesse t'est proposée" : count > 1 ? `${count} missions proposées par la hiérarchie` : "Nouvelle mission assignée");
+      if (youth) return { state: { ...state, offers, character: { ...c, reputation }, world: { ...state.world, lastYouthOffer: day } }, notices };
     }
   }
   return { state: { ...state, offers, character: { ...c, reputation } }, notices };

@@ -135,20 +135,21 @@ function WeekCard({ card, animate }: { card: Extract<StoryCard, { type: "semaine
   return (
     <Shell accent={accent}>
       <Kicker accent={accent} right={card.dateLabel}>
-        {weeks > 1 ? `${weeks} semaines` : "Semaine"} · jour {card.fromDay} → {card.toDay}
+        {weeks > 6 ? `${weeks} semaines · ≈ ${Math.round(weeks / 4.33)} mois` : weeks > 1 ? `${weeks} semaines` : "Semaine"} · jour {card.fromDay} → {card.toDay}
       </Kicker>
       <div className="px-4 pt-3 pb-4">
         <div className="flex gap-1" aria-hidden>
           {(weeks > 1 ? Array.from({ length: weeks }, (_, i) => `S${i + 1}`) : DAY_NAMES).map((d, i) => (
             <div key={d} className="flex-1 text-center">
               <div className="h-1.5 rounded-full transition-colors duration-300" style={{ background: i < days ? accent : "var(--hairline)" }} />
-              <span className={`mt-1 block text-[9px] tracking-wider uppercase ${i < days ? "text-muted" : "text-faint/50"}`}>{d}</span>
+              <span className={`mt-1 block text-[9px] tracking-wider uppercase ${i < days ? "text-muted" : "text-faint/50"}`}>{weeks <= 8 || i % 4 === 0 ? (weeks > 8 ? `M${i / 4 + 1}` : d) : "\u00a0"}</span>
             </div>
           ))}
         </div>
         {card.stop && (
-          <p className="mt-2 text-[11px] text-partial">
-            <span className="font-semibold tracking-[0.12em] uppercase">Le temps s'arrête</span> — {card.stop}
+          <p className={`mt-2 text-[11px] ${card.momentous ? "text-fail" : "text-partial"}`}>
+            <span className="font-semibold tracking-[0.12em] uppercase">{card.momentous ? "Temps fort" : "Le temps s'arrête"}</span> — {card.stop}
+            {card.momentous && <span className="ml-1 text-muted">· on le vit heure par heure</span>}
           </p>
         )}
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
