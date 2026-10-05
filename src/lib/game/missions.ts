@@ -257,7 +257,7 @@ interface Template {
   extra: NodeType[];
   key: NodeDef;
   covers: string[];
-  /** Compétences qui désignent la Division qui mène. */
+  /** Compétences clés de la mission (elles orientent le choix de l'équipe). */
   skills: SkillId[];
 }
 
@@ -1334,7 +1334,6 @@ function ctxOf(state: GameState): Ctx {
   };
 }
 
-/** Ressource de Division : l'étape en cours est emportée d'office (une fois par mission et par Division). */
 /**
  * Soutien de mission (une fois chacun) : le coup signature du siège emporte l'étape en cours ;
  * une Branche change les jauges (labo : alerte −15 ; analyse : renseignement +3 ; logistique : exposition −25).

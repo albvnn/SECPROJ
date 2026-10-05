@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { AGENCIES, findDivision } from "@/lib/game/agencies";
+import { AGENCIES, findSeat } from "@/lib/game/agencies";
 import { delegateOffer } from "@/lib/game/command";
 import { resourceAvailable } from "@/lib/game/engine";
+import { heatLabel, heatOf, languageBonus, languagesOf, legendUsableIn, trip } from "@/lib/game/field";
 import {
   approachOdds,
   availableGadgets,
   canStartMission,
+  chooseRoute,
   currentNode,
   difficultyLabel,
   maxGadgets,
@@ -18,12 +20,13 @@ import {
   requisitionBudget,
   suggestedTeam,
 } from "@/lib/game/missions";
-import { isAvailable, OPERATIVE_TRAITS, bestSkill } from "@/lib/game/roster";
-import { MISSION_IMPORTANCE, MISSION_RESULTS, RANKS, SKILLS, formatEuros } from "@/lib/game/rules";
+import { isAvailable, OPERATIVE_TRAITS, bestSkill, operativeTitle } from "@/lib/game/roster";
+import { MISSION_IMPORTANCE, MISSION_RESULTS, SKILLS, can, formatEuros } from "@/lib/game/rules";
 import type { Approach, GameState, Mission, MissionOffer, NodeStatus, Operative, PlayerAction } from "@/lib/game/types";
 import { tint } from "@/lib/ui/color";
 import { findCity, findCountry } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
+import { fundingFactor } from "@/lib/world/threats";
 import { SkillGlyph } from "./glyphs";
 
 const IMPORTANCE_COLOR: Record<string, string> = {
@@ -116,6 +119,9 @@ function OfferCard({ state, offer, onOpen }: { state: GameState; offer: MissionO
   const city = findCity(offer.cityId);
   const country = findCountry(city?.country ?? "");
   const left = offer.expiresDay - state.world.day;
+  const nemesis = offer.nemesis ? state.world.geo.nemeses.find((n) => n.id === offer.nemesis) : undefined;
+  const capstone = offer.threat && state.world.geo.threats.find((t) => t.id === offer.threat)?.capstone;
+  const heat = heatOf(state.character, city?.country ?? "");
   return (
     <li>
       <button onClick={onOpen} className="group flex h-full w-full flex-col rounded-sm border border-line bg-panel/60 p-4 text-left transition-colors hover:border-brass/60">
@@ -124,10 +130,13 @@ function OfferCard({ state, offer, onOpen }: { state: GameState; offer: MissionO
           {offer.assigned && <span className="rounded-sm bg-fail/15 px-1 text-fail">Assignée</span>}
           {offer.kind === "conjointe" && offer.other && <span style={{ color: AGENCIES[offer.other].color }}>Conjointe · {AGENCIES[offer.other].name}</span>}
           {offer.kind === "contre_espionnage" && offer.other && <span style={{ color: AGENCIES[offer.other].color }}>Contre-espionnage</span>}
+          {capstone && <span className="rounded-sm bg-brass/20 px-1 text-brass-soft">Opération décisive</span>}
+          {nemesis && <span className="text-fail">Némésis · {nemesis.name}</span>}
         </p>
         <p className="mt-1 font-serif text-xl leading-tight group-hover:text-brass-soft">{offer.title}</p>
         <p className="mt-1 text-xs text-muted">
           {city?.name}, {country?.name} · {regionLabel(offer.region)}
+          {heat >= 30 && <span className="text-fail"> · tu y es {heatLabel(heat)}</span>}
         </p>
         <p className="mt-2 line-clamp-3 text-sm text-ivory/80">{offer.summary}</p>
         <p className="mt-auto pt-2 text-[10px] text-faint">{left > 0 ? `${offer.assigned ? "À partir sous" : "Expire dans"} ${left} jours` : "Expire aujourd'hui"}</p>
@@ -160,18 +169,20 @@ function Preparation({
   const suggested = suggestedTeam(state, offer);
   const [team, setTeam] = useState<string[]>(suggested);
   const [gadgets, setGadgets] = useState<string[]>([]);
+  const [legend, setLegend] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const city = findCity(offer.cityId);
   const country = findCountry(city?.country ?? "");
   const faction = findFaction(offer.faction);
   const catalog = availableGadgets(state);
-  const budget = requisitionBudget(state);
+  const funding = fundingFactor(state.world.geo, c.identity.agency);
+  const budget = Math.round(requisitionBudget(state) * funding);
   const spent = gadgets.reduce((n, id) => n + (catalog.find((g) => g.id === id)?.cost ?? 0), 0);
   const slots = maxGadgets(state);
-  const pool = state.roster.filter((o) => o.agency === c.identity.agency && o.rank !== "aspirant" && isAvailable(o, state.world.day));
+  const pool = state.roster.filter((o) => o.agency === c.identity.agency && o.role !== "cadet" && isAvailable(o, state.world.day));
   const limit = offer.kind === "jeunesse" ? 1 : maxTeam(c.rank);
   const blocker = canStartMission(state);
-  const canDelegate = RANKS[c.rank].order >= RANKS.controleur.order && offer.kind !== "jeunesse";
+  const canDelegate = can(c.rank, "delegate") && offer.kind !== "jeunesse";
 
   const toggleGadget = (id: string) =>
     setGadgets((g) => (g.includes(id) ? g.filter((x) => x !== id) : g.length < slots ? [...g, id] : g));
@@ -206,6 +217,31 @@ function Preparation({
         </dl>
       </header>
 
+      <FieldBrief state={state} offer={offer} />
+
+      {c.legends.length > 0 && (
+        <section>
+          <h3 className="label mb-2">Légende · identité de couverture</h3>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <LegendOption on={legend === ""} onClick={() => setLegend("")} title="Sous ton vrai nom" text="Aucune protection : chaque faux pas t'expose en plein." />
+            {c.legends.map((l) => {
+              const usable = legendUsableIn(l, city?.country ?? "");
+              return (
+                <LegendOption
+                  key={l.id}
+                  on={legend === l.id}
+                  disabled={!usable}
+                  onClick={() => setLegend(l.id)}
+                  title={`${l.name} · crédibilité ${l.credibility}`}
+                  text={usable ? `${l.profession} (${l.nationality}). Exposition −${Math.floor(l.credibility / 20)} par faux pas.` : `Grillée en ${country?.name}.`}
+                />
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[11px] text-faint">Une couverture grillée en mission l'est dans tout le pays, et perd 40 de crédibilité.</p>
+        </section>
+      )}
+
       <section>
         <h3 className="label mb-2">
           Équipe {assigned ? "· désignée par la hiérarchie" : `· ${team.length}/${limit}`}
@@ -230,6 +266,7 @@ function Preparation({
       <section>
         <h3 className="label mb-1">
           Réquisition · {gadgets.length}/{slots} gadgets · {formatEuros(spent)} sur {formatEuros(budget)}
+          {funding < 0.98 || funding > 1.02 ? <span className={funding < 1 ? "text-fail" : "text-success"}> (budget ×{funding.toFixed(2)} selon la satisfaction des gouvernements)</span> : null}
         </h3>
         <div className="mb-3 h-1 overflow-hidden rounded-full bg-line">
           <div className="h-full rounded-full bg-brass" style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} />
@@ -269,7 +306,7 @@ function Preparation({
           })}
         </ul>
         <p className="mt-2 text-[11px] text-faint">
-          Le matériel de {AGENCIES[c.identity.agency].lab.name} est rendu au retour ; le perdre coûte du mérite. Certains prototypes se débloquent par la recherche (Commandeur).
+          Le matériel de {AGENCIES[c.identity.agency].lab.name} est rendu au retour ; le perdre coûte du mérite. Certains prototypes se débloquent par la recherche (Contrôleur).
         </p>
       </section>
 
@@ -277,7 +314,7 @@ function Preparation({
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
         <button
           disabled={busy || Boolean(blocker)}
-          onClick={() => onAction({ type: "mission_start", offer: offer.id, team: assigned ? suggested : team, gadgets })}
+          onClick={() => onAction({ type: "mission_start", offer: offer.id, team: assigned ? suggested : team, gadgets, ...(legend ? { legend } : {}) })}
           className="btn btn-primary px-8"
         >
           Partir en mission ✈
@@ -316,6 +353,79 @@ function Preparation({
   );
 }
 
+/** Ce qui attend sur place : voyage, langue, notoriété, adversaire nommé. */
+function FieldBrief({ state, offer }: { state: GameState; offer: MissionOffer }) {
+  const c = state.character;
+  const city = findCity(offer.cityId);
+  const country = findCountry(city?.country ?? "");
+  const t = trip(state.world.cityId, offer.cityId);
+  const lang = languageBonus(c, city?.country ?? "");
+  const heat = heatOf(c, city?.country ?? "");
+  const nemesis = offer.nemesis ? state.world.geo.nemeses.find((n) => n.id === offer.nemesis) : undefined;
+  const threat = offer.threat ? state.world.geo.threats.find((x) => x.id === offer.threat) : undefined;
+  const hostile = country?.bloc === "hostile";
+  return (
+    <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <Brief label="Voyage">
+        {t.km ? (
+          <>
+            {findCity(state.world.cityId)?.name} → {city?.name} : {t.km.toLocaleString("fr-FR")} km, {t.hours} h
+            {t.jetlag ? `, décalage ${t.jetlag} h` : ""}. <span className={t.fatigue >= 20 ? "text-partial" : ""}>Fatigue +{t.fatigue}.</span>
+          </>
+        ) : (
+          "Tu es déjà sur place."
+        )}
+        {hostile && <span className="block text-fail">Territoire hostile : insertion clandestine, sans visa ni soutien local.</span>}
+      </Brief>
+      <Brief label="Langue">
+        {languagesOf(city?.country ?? "").join(", ")}.{" "}
+        {lang > 0 ? <span className="text-success">Tu la parles : +1 au contact des gens.</span> : <span className="text-fail">Barrière de la langue : −1 au contact des gens.</span>}
+      </Brief>
+      <Brief label={`Notoriété · ${country?.name ?? "?"}`}>
+        <span className={heat >= 60 ? "text-fail" : heat >= 30 ? "text-partial" : "text-success"}>
+          {heatLabel(heat)} ({heat}/100)
+        </span>
+        . {heat >= 60 ? "On t'attendra à l'arrivée, sauf si ta légende tient (crédibilité 60+)." : heat >= 30 ? `L'alerte partira de ${Math.round(heat / 3)}.` : "Personne ne te connaît ici."}
+      </Brief>
+      <Brief label={nemesis ? "Némésis" : "Menace"}>
+        {nemesis ? (
+          <>
+            <span className="text-fail">{nemesis.name}</span>, {nemesis.title} — niveau {nemesis.level}, rancune {nemesis.grudge}. {nemesis.history}
+          </>
+        ) : threat ? (
+          <>
+            {threat.title} : avancement {threat.progress}/100{threat.capstone ? " — l'opération décisive contre la tête de la faction." : "."}
+          </>
+        ) : (
+          "Aucun ennemi nommé dans ce dossier."
+        )}
+      </Brief>
+    </section>
+  );
+}
+
+function Brief({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-sm border border-line bg-panel/50 px-3 py-2">
+      <p className="label mb-1">{label}</p>
+      <p className="text-xs leading-snug text-ivory/85">{children}</p>
+    </div>
+  );
+}
+
+function LegendOption({ on, disabled, onClick, title, text }: { on: boolean; disabled?: boolean; onClick: () => void; title: string; text: string }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-sm border p-2.5 text-left transition-colors ${on ? "border-brass bg-brass/10" : "border-line bg-panel/50 hover:border-line-strong"} ${disabled ? "opacity-40" : ""}`}
+    >
+      <span className="block text-sm">{title}</span>
+      <span className="text-[11px] text-muted">{text}</span>
+    </button>
+  );
+}
+
 function MateCard({ o, on, onClick }: { o: Operative; on: boolean; onClick?: () => void }) {
   const trait = OPERATIVE_TRAITS[o.trait];
   const skills = Object.entries(o.skills)
@@ -336,7 +446,7 @@ function MateCard({ o, on, onClick }: { o: Operative; on: boolean; onClick?: () 
           <span className={`text-[10px] ${o.affinity >= 20 ? "text-success" : o.affinity <= -20 ? "text-fail" : "text-muted"}`}>{o.affinity > 0 ? `+${o.affinity}` : o.affinity}</span>
         </span>
         <span className="text-[11px] text-muted">
-          {o.nationality} · {RANKS[o.rank].label} · {findDivision(o.agency, o.division)?.name ?? "—"}
+          {o.nationality} · {operativeTitle(o)}
         </span>
         <span className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-ivory/80">
           {skills.map(([k, v]) => (
@@ -370,9 +480,12 @@ export function MissionTrack({ mission }: { mission: Mission }) {
   return (
     <ol className="flex flex-wrap items-center gap-1">
       {mission.nodes.map((n, i) => (
-        <li key={i} className="flex items-center gap-1" title={`${n.title}${n.key ? " (objectif)" : ""}`}>
-          <span className={`grid h-6 min-w-6 place-items-center rounded-sm border px-1 text-[10px] font-semibold ${STATUS_STYLE[n.status]} ${n.key ? "ring-1 ring-brass/50" : ""}`}>
-            {n.type === "dilemme" ? "?" : n.key ? "★" : i + 1}
+        <li key={i} className="flex items-center gap-1" title={`${n.title}${n.key ? " (objectif)" : n.type === "secondaire" ? " (objectif secondaire, facultatif)" : ""}${n.alt ? ` — ou : ${n.alt.title}` : ""}`}>
+          <span
+            className={`grid h-6 min-w-6 place-items-center rounded-sm border px-1 text-[10px] font-semibold ${STATUS_STYLE[n.status]} ${n.key ? "ring-1 ring-brass/50" : ""} ${n.type === "secondaire" ? "border-dashed" : ""}`}
+          >
+            {n.type === "dilemme" ? "?" : n.key ? "★" : n.type === "secondaire" ? "◇" : i + 1}
+            {n.alt && n.status === "a_venir" ? <sup className="ml-px text-[8px] text-brass">⑂</sup> : null}
           </span>
           {i < mission.nodes.length - 1 && <span className="h-px w-2 bg-line" />}
         </li>
@@ -420,14 +533,30 @@ function Debrief({ state, mission }: { state: GameState; mission: Mission }) {
 /* Console de mission (dans le récit)                                  */
 /* ------------------------------------------------------------------ */
 
-export function MissionConsole({ state, onAction, busy }: { state: GameState; onAction: (a: PlayerAction) => void; busy: boolean }) {
+export function MissionConsole({
+  state,
+  onAction,
+  onChange,
+  busy,
+}: {
+  state: GameState;
+  onAction: (a: PlayerAction) => void;
+  /** Décisions sans tour de jeu (changer d'itinéraire). */
+  onChange?: (s: GameState) => void;
+  busy: boolean;
+}) {
   const m = state.mission!;
   const node = currentNode(m);
   const [spend, setSpend] = useState(0);
   const [free, setFree] = useState("");
   const options = nodeOptions(state);
   const c = state.character;
-  const resources = c.divisions.filter((d) => resourceAvailable(state, d));
+  const agency = AGENCIES[c.identity.agency];
+  const seat = findSeat(c.identity.agency, c.seat);
+  const resources = [
+    ...(seat && resourceAvailable(state, "seat") ? [{ id: "seat", name: seat.signature.name, title: `${seat.name} : ${seat.signature.description} (une fois par mission : l'étape est emportée)` }] : []),
+    ...agency.branches.filter((b) => resourceAvailable(state, b.id)).map((b) => ({ id: b.id, name: b.support.name, title: `${b.name} : ${b.support.description} (une fois par mission)` })),
+  ];
   const maxSpend = Math.min(2, m.intel);
   const intel = Math.min(spend, maxSpend);
   if (!node) return null;
@@ -456,6 +585,19 @@ export function MissionConsole({ state, onAction, busy }: { state: GameState; on
           {node.title}
         </p>
         <p className="text-sm text-muted">{node.situation}</p>
+        {node.type === "secondaire" && <p className="mt-1 text-[11px] text-brass-soft">Objectif secondaire, facultatif : mérite, renseignement et une pièce de dossier sur {findFaction(m.faction)?.name ?? "la faction"}.</p>}
+        {node.alt && node.attempts === 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2 text-xs">
+            <span className="text-muted">
+              Autre itinéraire : <span className="text-ivory">{node.alt.title}</span> — {node.alt.situation}
+            </span>
+            {onChange && (
+              <button disabled={busy} onClick={() => onChange(chooseRoute(state))} className="ml-auto rounded-sm border border-brass/60 px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-brass-soft uppercase hover:bg-brass hover:text-ink">
+                ⑂ Prendre cet itinéraire
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {node.type !== "dilemme" && maxSpend > 0 && (
@@ -482,21 +624,18 @@ export function MissionConsole({ state, onAction, busy }: { state: GameState; on
       </ul>
 
       <div className="flex flex-wrap items-center gap-2">
-        {resources.map((d) => {
-          const def = findDivision(c.identity.agency, d)!;
-          return (
-            <button
-              key={d}
-              disabled={busy}
-              onClick={() => onAction({ type: "resource", division: d })}
-              className="rounded-sm border px-2.5 py-1.5 text-[11px] font-semibold tracking-wide"
-              style={{ borderColor: AGENCIES[c.identity.agency].color, color: AGENCIES[c.identity.agency].color }}
-              title={`${def.resource.description} (une fois par mission : l'étape est emportée)`}
-            >
-              ✦ {def.resource.name}
-            </button>
-          );
-        })}
+        {resources.map((r) => (
+          <button
+            key={r.id}
+            disabled={busy}
+            onClick={() => onAction({ type: "resource", source: r.id })}
+            className="rounded-sm border px-2.5 py-1.5 text-[11px] font-semibold tracking-wide"
+            style={{ borderColor: agency.color, color: agency.color }}
+            title={r.title}
+          >
+            {r.id === "seat" ? "✦" : "⚙"} {r.name}
+          </button>
+        ))}
         <form
           className="flex min-w-[14rem] flex-1 gap-2"
           onSubmit={(e) => {

@@ -28,7 +28,7 @@ export function pickModel(state: GameState, action: PlayerAction, memoryChanged:
 
   const prev = state.routing;
   if (action.type === "start") return strong("ouverture de la partie");
-  if (action.type === "promotion") return strong("cérémonie de Division");
+  if (action.type === "promotion") return strong("cérémonie de promotion");
   if (state.nextIntensity === "forte") return strong("scène forte annoncée par le narrateur");
   if (prev && prev.phase !== phase) return strong("changement de phase");
 

@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { AGENCIES, AGENCY_IDS, findDivision } from "@/lib/game/agencies";
-import { HQ_MODULES, RESEARCHABLE, SQUAD_SIZE, STATION_MODULES, buyModule, openStation, openTheatre, setDivisionBudget, setPosture, setSquad, startProject, upgradeHq } from "@/lib/game/command";
+import { AGENCIES, AGENCY_IDS } from "@/lib/game/agencies";
+import { HQ_MODULES, RESEARCHABLE, SQUAD_SIZE, STATION_MODULES, buyModule, openStation, openTheatre, setBranchBudget, setPosture, setSquad, startProject, upgradeHq } from "@/lib/game/command";
 import { RELATION_LIMIT, applyUpdate, recordProgress } from "@/lib/game/engine";
 import { GADGETS } from "@/lib/game/gadgets";
 import { assetCap } from "@/lib/game/planner";
-import { OPERATIVE_TRAITS } from "@/lib/game/roster";
-import { RANKS, SKILLS, formatEuros } from "@/lib/game/rules";
-import type { AgencyId, GameState, HqModule, Operative, RankId, StationModule } from "@/lib/game/types";
+import { OPERATIVE_TRAITS, operativeTitle } from "@/lib/game/roster";
+import { RANKS, SKILLS, can, formatEuros, type Capability } from "@/lib/game/rules";
+import type { AgencyId, GameState, HqModule, Operative, OperativeRole, RankId, StationModule } from "@/lib/game/types";
 import { tint } from "@/lib/ui/color";
 import { CITIES, REGION_IDS, REGIONS, findCity, findCountry, type RegionId } from "@/lib/world/geo";
+import { SeatSigil } from "./sigils";
 import { RankBadge } from "./ui";
-
-const at = (rank: RankId, min: RankId) => RANKS[rank].order >= RANKS[min].order;
 
 function ago(day: number, now: number) {
   const d = now - day;
@@ -29,10 +28,12 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
   const cadet = state.character.rank === "aspirant" || state.character.rank === "prospect";
   const [tab, setTab] = useState<AgencyId | "chambree">(cadet ? "chambree" : me);
   const [onlyFree, setOnlyFree] = useState(false);
-  const isChef = at(state.character.rank, "chef");
+  const [role, setRole] = useState<OperativeRole | "tous">("tous");
+  const trainsSeconds = can(state.character.rank, "seconds");
   const [error, setError] = useState<string | null>(null);
   const list = state.roster
-    .filter((o) => (tab === "chambree" ? o.agency === me && (o.rank === "aspirant" || o.age <= 19) : o.agency === tab && o.rank !== "aspirant"))
+    .filter((o) => (tab === "chambree" ? o.agency === me && o.role === "cadet" : o.agency === tab && o.role !== "cadet"))
+    .filter((o) => tab === "chambree" || role === "tous" || o.role === role || (role === "officier" && o.rank === "chef_station"))
     .filter((o) => !onlyFree || o.status === "apte")
     .sort((a, b) => b.missionsWithPlayer - a.missionsWithPlayer || b.affinity - a.affinity);
 
@@ -52,7 +53,7 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
       relations: [
         {
           nom: o.codename ? `${o.name} « ${o.codename} »` : o.name,
-          role: o.rank === "aspirant" ? `cadet de ta chambrée (${o.nationality})` : `${RANKS[o.rank].label} de ${AGENCIES[o.agency].name}, ${findDivision(o.agency, o.division)?.name ?? ""}`,
+          role: o.role === "cadet" ? `cadet de l'Académie (${o.nationality})` : `${operativeTitle(o)} (${AGENCIES[o.agency].name})`,
           type: o.agency === me ? "equipier" : "contact",
           affinite: o.affinity,
           lieu: findCity(o.cityId)?.name,
@@ -64,6 +65,7 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
     else onChange(recordProgress(r.state, r.notices));
   };
   const known = new Set(state.relations.map((r) => r.name.split(" « ")[0]));
+  const circle = tab === "chambree" ? null : AGENCIES[tab];
   const room = state.relations.filter((r) => r.status !== "archive" && r.status !== "mort").length < RELATION_LIMIT;
 
   return (
@@ -78,11 +80,29 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
         </label>
       </div>
       {tab !== me && tab !== "chambree" && (
-        <p className="text-xs text-faint">Agents d'une agence rivale que tu as croisés ou dont on connaît le dossier. Leur dernière position connue est sur la carte.</p>
+        <p className="text-xs text-faint">Agents d'une agence rivale : leurs titulaires ont leurs propres missions, réussissent, échouent, meurent. Leur dernière position connue est sur la carte.</p>
       )}
-      {isChef && tab === me && (
+      {tab === "chambree" && <p className="text-xs text-faint">Toute l'Académie : une dizaine de cadets de tous âges, qui seront peut-être tes équipiers… ou tes rivaux pour un siège.</p>}
+      {circle && <CircleBoard state={state} agency={circle.id} />}
+      {tab !== "chambree" && (
+        <div className="flex flex-wrap gap-1">
+          {(
+            [
+              ["tous", "Tous"],
+              ["titulaire", circle?.circle.name ?? "Le Cercle"],
+              ["officier", "Stations"],
+              ["soutien", "Branches"],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} onClick={() => setRole(id)} className={`rounded-sm px-2 py-0.5 text-[11px] ${role === id ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {trainsSeconds && tab === me && (
         <p className="text-xs text-muted">
-          Ton escouade : {state.command.squad.length}/{SQUAD_SIZE}. Clique sur ⚑ pour y affecter un agent ; elle part avec toi par défaut et s'entraîne dans ton planning.
+          Tes seconds : {state.command.squad.length}/{SQUAD_SIZE}. Clique sur ⚑ pour former un officier ; ils partent avec toi par défaut et s'entraînent dans ton planning.
         </p>
       )}
       {error && <p className="text-xs text-fail">{error}</p>}
@@ -104,11 +124,10 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
                     {o.name}
                   </p>
                   <p className="text-[11px] text-muted">
-                    {o.nationality}, {o.age} ans · {RANKS[o.rank].label}
-                    {o.division ? ` · ${findDivision(o.agency, o.division)?.name}` : ""}
+                    {o.nationality}, {o.age} ans · {operativeTitle(o)}
                   </p>
                 </div>
-                {isChef && tab === me && o.rank !== "aspirant" && onChange && (
+                {trainsSeconds && tab === me && o.role === "officier" && onChange && (
                   <button onClick={() => toggleSquad(o.id)} title={inSquad ? "Retirer de l'escouade" : "Affecter à ton escouade"} className={`text-sm ${inSquad ? "text-brass" : "text-faint hover:text-ivory"}`}>
                     ⚑
                   </button>
@@ -139,7 +158,7 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
                   {o.affinity}
                   {o.missionsWithPlayer ? ` · ${o.missionsWithPlayer} mission${o.missionsWithPlayer > 1 ? "s" : ""} ensemble` : ""}
                 </span>
-                {onChange && !known.has(o.name) && room && (o.missionsWithPlayer > 0 || o.rank === "aspirant" || o.affinity >= 25) && (
+                {onChange && !known.has(o.name) && room && (o.missionsWithPlayer > 0 || o.role === "cadet" || o.affinity >= 25) && (
                   <button onClick={() => keep(o)} className="tracking-[0.1em] text-brass-soft uppercase hover:underline" title="L'ajouter à tes liens suivis">
                     + Garder le contact
                   </button>
@@ -151,6 +170,45 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
       </ul>
       {list.length === 0 && <p className="text-sm text-faint italic">Personne.</p>}
     </div>
+  );
+}
+
+/** Les sièges du Cercle d'une agence : qui y siège, lesquels sont vacants. */
+function CircleBoard({ state, agency }: { state: GameState; agency: AgencyId }) {
+  const a = AGENCIES[agency];
+  const mine = agency === state.character.identity.agency;
+  return (
+    <section className="rounded-sm border p-3" style={{ borderColor: tint(a.color, 35), background: tint(a.color, 4) }}>
+      <p className="label" style={{ color: a.color }}>
+        {a.circle.name} · {a.seats.length} {a.circle.seatTerm.plural}
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted">{a.circle.description}</p>
+      <ul className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+        {a.seats.map((s) => {
+          const player = mine && state.character.seat === s.id;
+          const holder = state.roster.find((o) => o.agency === agency && o.seat === s.id && o.status !== "mort" && o.status !== "retraite" && o.status !== "disparu");
+          const since = state.command.vacantSince?.[`${agency}:${s.id}`];
+          return (
+            <li
+              key={s.id}
+              className="flex items-center gap-1.5 rounded-sm border px-1.5 py-1"
+              style={{ borderColor: player ? a.color : "var(--color-line)", background: player ? tint(a.color, 12) : undefined }}
+              title={`${s.name} — ${s.heritage}`}
+            >
+              <span style={{ color: a.color, opacity: holder || player ? 1 : 0.4 }}>
+                <SeatSigil agency={agency} seat={s.id} number={s.number} className="h-8 w-8" />
+              </span>
+              <span className="min-w-0 text-[10px] leading-tight">
+                <span className="block truncate text-ivory/90">{s.name.replace(/^le Banc d(?:e |')/, "")}</span>
+                <span className={`block truncate ${player ? "" : holder ? "text-muted" : "text-partial"}`} style={player ? { color: a.color } : undefined}>
+                  {player ? "toi" : holder ? `${holder.name.split(" ")[0]}${holder.status === "en_mission" ? " · en mission" : holder.status === "blesse" ? " · blessé" : ""}` : `vacant${since !== undefined ? ` · ${Math.max(0, Math.round((state.world.day - since) / 7))} sem.` : ""}`}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -170,13 +228,13 @@ function TabBtn({ on, onClick, label, color }: { on: boolean; onClick: () => voi
 /* Commandement                                                        */
 /* ------------------------------------------------------------------ */
 
-const LADDER: { rank: RankId; title: string; text: string }[] = [
-  { rank: "agent", title: "Toi-même", text: "Ton planning, ton équipement, ta solde, ta couverture civile, tes liens." },
-  { rank: "special", title: "Un réseau d'informateurs", text: "Recrute des sources dans les villes du monde : elles te donnent du renseignement de départ dans leur région. Paie-les, rencontre-les, ou perds-les." },
-  { rank: "chef", title: "Une escouade", text: "Trois agents qui partent avec toi et s'entraînent sous tes ordres. Leur fatigue, leur moral et leur loyauté deviennent les tiens." },
-  { rank: "controleur", title: "Une antenne", text: "Un bureau secret dans une vraie ville : budget mensuel, modules (planques, écoutes, atelier…), et des missions que tu peux confier à d'autres." },
-  { rank: "commandeur", title: "Un théâtre d'opérations", text: "Une région entière, ses antennes, sa posture (renseignement, action, discrétion) et des projets de recherche qui débloquent les prototypes du laboratoire." },
-  { rank: "directeur", title: "L'agence", text: "Le siège et ses modules, le budget des Divisions, le crédit auprès des gouvernements, et la diplomatie avec les deux agences rivales." },
+const LADDER: { rank: RankId; cap?: Capability; title: string; text: string }[] = [
+  { rank: "agent", title: "Toi-même", text: "Ton planning, tes légendes, ton équipement, ta solde, ta couverture civile, tes liens, et tes rapports avec les trois Branches." },
+  { rank: "titulaire", cap: "informants", title: "Un réseau d'informateurs", text: "Recrute des sources dans les villes du monde : elles te donnent du renseignement de départ dans leur région. Paie-les, rencontre-les, ou perds-les." },
+  { rank: "doyen", cap: "seconds", title: "Deux seconds", text: "Deux officiers que tu formes : ils partent avec toi et s'entraînent sous tes ordres. Leur fatigue, leur moral et leur loyauté deviennent les tiens." },
+  { rank: "chef_station", cap: "station", title: "Une Station", text: "Une antenne secrète dans une vraie ville : budget mensuel, modules (planques, écoutes, atelier…), et des missions que tu peux confier à tes officiers." },
+  { rank: "controleur", cap: "region", title: "Une région", text: "Tu traites les titulaires, tu supervises les Stations d'une région, sa posture (renseignement, action, discrétion), et tu commandes des projets au laboratoire." },
+  { rank: "directeur", cap: "agency", title: "L'agence", text: "Le siège et ses modules, le budget des Branches, le crédit auprès des gouvernements, et la diplomatie avec les deux agences rivales." },
 ];
 
 export function CommandPanel({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
@@ -198,7 +256,7 @@ export function CommandPanel({ state, onChange }: { state: GameState; onChange?:
         <h3 className="label mb-3">Ce que tu diriges</h3>
         <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {LADDER.map((l) => {
-            const on = at(rank, l.rank);
+            const on = l.cap ? can(rank, l.cap) : RANKS[rank].order >= RANKS.agent.order;
             return (
               <li key={l.rank} className={`flex gap-2.5 rounded-sm border p-3 ${on ? "border-brass/50 bg-brass/5" : "border-line opacity-55"}`}>
                 <RankBadge rank={l.rank} className="h-7 w-6 shrink-0" />
@@ -215,10 +273,10 @@ export function CommandPanel({ state, onChange }: { state: GameState; onChange?:
       </section>
       {error && <p className="text-sm text-fail">{error}</p>}
 
-      {at(rank, "special") && <Assets state={state} />}
-      {at(rank, "controleur") && <StationSection state={state} run={run} />}
-      {at(rank, "commandeur") && <TheatreSection state={state} run={run} />}
-      {at(rank, "directeur") && <AgencySection state={state} run={run} />}
+      {can(rank, "informants") && <Assets state={state} />}
+      {can(rank, "station") && <StationSection state={state} run={run} />}
+      {can(rank, "region") && <TheatreSection state={state} run={run} />}
+      {can(rank, "agency") && <AgencySection state={state} run={run} />}
     </div>
   );
 }
@@ -266,11 +324,12 @@ function StationSection({ state, run }: { state: GameState; run: (fn: () => Game
   const st = state.command.station;
   const [city, setCity] = useState("");
   if (!st) {
-    const cities = CITIES.filter((c) => !c.tags?.includes("secret") && findCountry(c.country)?.bloc !== "hostile").sort((a, b) => a.name.localeCompare(b.name, "fr"));
+    const own = AGENCIES[state.character.identity.agency].stations;
+    const cities = CITIES.filter((c) => own.includes(c.id)).sort((a, b) => a.name.localeCompare(b.name, "fr"));
     return (
       <section>
-        <h3 className="label mb-2">Antenne</h3>
-        <p className="mb-2 text-sm text-muted">Choisis la ville où ouvrir ton antenne : ses missions, ses écoutes et ses planques serviront toute sa région.</p>
+        <h3 className="label mb-2">Station</h3>
+        <p className="mb-2 text-sm text-muted">Choisis la Station de l'agence que tu diriges : ses missions, ses écoutes et ses planques serviront toute sa région.</p>
         <div className="flex flex-wrap gap-2">
           <select className="field max-w-xs py-1.5 text-sm" value={city} onChange={(e) => setCity(e.target.value)}>
             <option value="">Choisir une ville…</option>
@@ -281,7 +340,7 @@ function StationSection({ state, run }: { state: GameState; run: (fn: () => Game
             ))}
           </select>
           <button disabled={!city} onClick={() => run(() => openStation(state, city))} className="btn btn-primary">
-            Ouvrir l'antenne
+            Prendre la Station
           </button>
         </div>
       </section>
@@ -290,7 +349,7 @@ function StationSection({ state, run }: { state: GameState; run: (fn: () => Game
   const c = findCity(st.cityId);
   return (
     <section>
-      <h3 className="label mb-2">Antenne de {c?.name}</h3>
+      <h3 className="label mb-2">Station de {c?.name}</h3>
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Budget du mois" value={formatEuros(st.budget)} />
         <Stat label="Renseignement régional" value={`${st.intel}/10`} />
@@ -316,7 +375,9 @@ function StationSection({ state, run }: { state: GameState; run: (fn: () => Game
           );
         })}
       </ul>
-      <p className="mt-2 text-[11px] text-faint">Le budget se renouvelle chaque mois. Depuis le tableau des missions, tu peux confier un dossier à une équipe sans y aller.</p>
+      <p className="mt-2 text-[11px] text-faint">
+        Le budget se renouvelle chaque mois (selon la satisfaction des gouvernements). Depuis le tableau des missions, tu peux confier un dossier à tes officiers sans y aller.
+      </p>
     </section>
   );
 }
@@ -327,7 +388,7 @@ function TheatreSection({ state, run }: { state: GameState; run: (fn: () => Game
   if (!th)
     return (
       <section>
-        <h3 className="label mb-2">Théâtre d'opérations</h3>
+        <h3 className="label mb-2">Région supervisée</h3>
         <div className="flex flex-wrap gap-2">
           <select className="field max-w-xs py-1.5 text-sm" value={region} onChange={(e) => setRegion(e.target.value as RegionId)}>
             <option value="">Choisir une région…</option>
@@ -346,10 +407,10 @@ function TheatreSection({ state, run }: { state: GameState; run: (fn: () => Game
   const researchable = RESEARCHABLE().filter((g) => !state.command.unlocked.includes(g.id) && !th.projects.some((p) => p.gadget === g.id));
   return (
     <section>
-      <h3 className="label mb-2">Théâtre : {REGIONS[th.region as RegionId]?.label}</h3>
+      <h3 className="label mb-2">Région : {REGIONS[th.region as RegionId]?.label}</h3>
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Budget" value={formatEuros(th.budget)} />
-        <Stat label="Antennes" value={th.stations.map((s) => findCity(s)?.name).join(", ")} />
+        <Stat label="Stations" value={th.stations.map((s) => findCity(s)?.name).join(", ")} />
         <div className="rounded-sm border border-line bg-panel/50 px-3 py-2">
           <p className="label">Posture</p>
           <div className="mt-1 flex gap-1">
@@ -389,7 +450,7 @@ function TheatreSection({ state, run }: { state: GameState; run: (fn: () => Game
           ))}
         </div>
       )}
-      <p className="mt-2 text-[11px] text-faint">Les projets avancent avec l'activité « Théâtre » de ton planning.</p>
+      <p className="mt-2 text-[11px] text-faint">Les projets du laboratoire avancent avec l'activité « Région » de ton planning.</p>
     </section>
   );
 }
@@ -420,15 +481,15 @@ function AgencySection({ state, run }: { state: GameState; run: (fn: () => GameS
           </li>
         ))}
       </ul>
-      <h4 className="label mt-4 mb-2">Budget des {agency.divisionTerm.plural} (M€ / mois)</h4>
+      <h4 className="label mt-4 mb-2">Budget des Branches (M€ / mois)</h4>
       <ul className="space-y-2">
-        {agency.divisions.map((d) => (
-          <li key={d.id} className="flex items-center gap-3 text-sm">
-            <span className="w-36 truncate" style={{ color: agency.color }}>
-              {d.name}
+        {agency.branches.map((b) => (
+          <li key={b.id} className="flex items-center gap-3 text-sm">
+            <span className="w-36 truncate" style={{ color: agency.color }} title={b.role}>
+              {b.name}
             </span>
-            <input type="range" min={5} max={60} value={ag.divisionBudget[d.id] ?? 20} onChange={(e) => run(() => setDivisionBudget(state, d.id, Number(e.target.value)))} className="flex-1 accent-[var(--color-brass)]" />
-            <span className="w-10 text-right font-mono text-xs">{ag.divisionBudget[d.id] ?? 20}</span>
+            <input type="range" min={5} max={80} value={ag.branchBudget[b.id] ?? 30} onChange={(e) => run(() => setBranchBudget(state, b.id, Number(e.target.value)))} className="flex-1 accent-[var(--color-brass)]" />
+            <span className="w-10 text-right font-mono text-xs">{ag.branchBudget[b.id] ?? 30}</span>
           </li>
         ))}
       </ul>

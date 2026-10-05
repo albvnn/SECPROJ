@@ -7,6 +7,7 @@ import { feature, merge } from "topojson-client";
 import type { GeometryCollection, Topology } from "topojson-specification";
 import world from "world-atlas/countries-110m.json";
 import { AGENCIES, AGENCY_IDS } from "@/lib/game/agencies";
+import { heatLabel } from "@/lib/game/field";
 import { MISSION_IMPORTANCE } from "@/lib/game/rules";
 import type { AgencyId, GameState } from "@/lib/game/types";
 import { tint } from "@/lib/ui/color";
@@ -30,7 +31,7 @@ import { diplomacyBetween, diplomacyLabel, tensionLabel } from "@/lib/world/worl
 const W = 1000;
 const H = 520;
 
-type Layer = "blocs" | "tensions" | "ressources";
+type Layer = "blocs" | "tensions" | "notoriete" | "ressources";
 type Selection = { kind: "country"; id: string } | { kind: "city"; id: string } | null;
 
 interface Shape {
@@ -80,6 +81,8 @@ interface CityInfo {
   agents: { name: string; codename: string; agency: AgencyId; day: number; status: string }[];
   assets: string[];
   station: boolean;
+  /** Menaces identifiées qui se préparent ici. */
+  threats: string[];
 }
 
 function cityInfos(state: GameState): Map<string, CityInfo> {
@@ -88,7 +91,7 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
     const city = findCity(id);
     if (!city) return null;
     if (!map.has(id))
-      map.set(id, { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false });
+      map.set(id, { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [] });
     return map.get(id)!;
   };
   for (const a of AGENCY_IDS) {
@@ -108,10 +111,12 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
     if (o.status !== "mort" && (o.agency === agency || o.missionsWithPlayer > 0))
       get(o.cityId)?.agents.push({ name: o.name, codename: o.codename, agency: o.agency, day: o.positionDay, status: o.status });
   for (const a of state.command.assets) if (a.status === "actif") get(a.cityId)?.assets.push(`${a.name}, ${a.role}`);
-  if (state.command.station) {
-    const s = get(state.command.station.cityId);
+  const stationCity = state.command.station?.cityId ?? state.character.station;
+  if (stationCity) {
+    const s = get(stationCity);
     if (s) s.station = true;
   }
+  for (const t of state.world.geo.threats) if (t.known) get(t.cityId)?.threats.push(t.capstone ? `${t.title} (opération décisive)` : `${t.title} — ${t.progress}/100`);
   return map;
 }
 
@@ -148,6 +153,10 @@ export function WorldMap({ state }: { state: GameState }) {
     if (layer === "tensions") {
       const t = geo.tensions[c.region] ?? 50;
       return `color-mix(in srgb, var(--heat-high) ${t}%, var(--heat-low))`;
+    }
+    if (layer === "notoriete") {
+      const h = state.character.heat?.[c.id] ?? 0;
+      return h > 0 ? `color-mix(in srgb, var(--heat-high) ${Math.max(15, h)}%, var(--map-land))` : "var(--map-land)";
     }
     return c.resources.includes(resource) ? tint("var(--color-brass)", 80) : "var(--map-land)";
   };
@@ -264,13 +273,13 @@ export function WorldMap({ state }: { state: GameState }) {
         {/* Commandes */}
         <div className="absolute top-3 left-3 flex flex-col gap-2">
           <div className="flex overflow-hidden rounded-sm border border-line bg-panel/90 backdrop-blur">
-            {(["blocs", "tensions", "ressources"] as Layer[]).map((l) => (
+            {(["blocs", "tensions", "notoriete", "ressources"] as Layer[]).map((l) => (
               <button
                 key={l}
                 onClick={() => setLayer(l)}
                 className={`px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase ${layer === l ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}
               >
-                {l}
+                {l === "notoriete" ? "notoriété" : l}
               </button>
             ))}
           </div>
@@ -333,7 +342,7 @@ export function WorldMap({ state }: { state: GameState }) {
 }
 
 function emptyInfo(city: CityDef): CityInfo {
-  return { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false };
+  return { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [] };
 }
 
 function CityMarker({
@@ -386,7 +395,15 @@ function CityMarker({
   }
   if (show.ops && info.station) {
     parts.push(<rect key="st" x={x + 4 * s} y={y - 9 * s} width={5 * s} height={5 * s} fill="var(--color-brass)" />);
-    label.push("Ton antenne");
+    label.push("Ta Station");
+  }
+  if (show.ops && info.threats.length) {
+    parts.push(
+      <text key="th" x={x - 9 * s} y={y + 3 * s} fontSize={9 * s} textAnchor="middle" fill="var(--color-fail)" fontWeight={700}>
+        !
+      </text>,
+    );
+    label.push(...info.threats.map((t) => `Menace : ${t}`));
   }
   if (show.ops && info.assets.length) {
     parts.push(<path key="as" d={`M${x - 8 * s},${y + 8 * s}l${3 * s},${-5 * s}l${3 * s},${5 * s}z`} fill="var(--color-partial)" />);
@@ -447,6 +464,13 @@ function Legend({ layer }: { layer: Layer }) {
           explosive
         </span>
       )}
+      {layer === "notoriete" && (
+        <span className="flex items-center gap-1.5">
+          inconnu
+          <span className="h-2 w-20 rounded-full" style={{ background: "linear-gradient(90deg, var(--map-land), var(--heat-high))" }} />
+          recherché par ses services
+        </span>
+      )}
       {layer === "ressources" && <span>Les pays dorés possèdent la ressource choisie.</span>}
       <span className="flex items-center gap-1">
         <span className="h-2 w-2 rounded-full bg-brass" /> toi
@@ -458,6 +482,7 @@ function Legend({ layer }: { layer: Layer }) {
         <span className="h-2 w-2 rounded-full" style={{ background: "var(--pole-ame)" }} /> liens
       </span>
       <span className="flex items-center gap-1 text-fail">⌖ opérations</span>
+      <span className="flex items-center gap-1 text-fail">! menaces</span>
     </div>
   );
 }
@@ -642,7 +667,8 @@ function CountryPanel({
 function CityPanel({ state, info, onCountry, onBack }: { state: GameState; info: CityInfo; onCountry: (id: string) => void; onBack: () => void }) {
   const country = findCountry(info.city.country);
   const now = state.world.day;
-  const empty = !info.player && !info.relations.length && !info.agents.length && !info.assets.length && !info.offers.length && !info.mission && !info.station && !info.hq.length && !info.academy.length;
+  const empty = !info.player && !info.relations.length && !info.agents.length && !info.assets.length && !info.offers.length && !info.mission && !info.station && !info.hq.length && !info.academy.length && !info.threats.length;
+  const heat = country ? (state.character.heat?.[country.id] ?? 0) : 0;
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="text-[10px] tracking-[0.15em] text-faint uppercase hover:text-ivory">
@@ -657,6 +683,16 @@ function CityPanel({ state, info, onCountry, onBack }: { state: GameState; info:
         )}
       </div>
       {info.player && <p className="text-xs text-brass-soft">● Tu es ici.</p>}
+      {heat > 0 && (
+        <p className={`text-xs ${heat >= 60 ? "text-fail" : "text-partial"}`}>
+          Tu es {heatLabel(heat)} par les services de {country?.name} ({heat}/100).
+        </p>
+      )}
+      {info.threats.map((t) => (
+        <p key={t} className="text-xs text-fail">
+          ! Menace : {t}
+        </p>
+      ))}
       {[...info.hq, ...info.academy].map((a) => (
         <p key={a + (info.hq.includes(a) ? "hq" : "ac")} className="text-xs" style={{ color: AGENCIES[a].color }}>
           ◆ {info.hq.includes(a) ? `Siège de ${AGENCIES[a].name}` : `Académie de ${AGENCIES[a].name}`}
@@ -672,7 +708,7 @@ function CityPanel({ state, info, onCountry, onBack }: { state: GameState; info:
           ⌖ Mission proposée : {o}
         </p>
       ))}
-      {info.station && <p className="text-xs text-brass">▣ Ton antenne</p>}
+      {info.station && <p className="text-xs text-brass">▣ Ta Station</p>}
       {info.relations.length > 0 && (
         <div>
           <h4 className="label mb-1.5">Tes liens (dernière position connue)</h4>

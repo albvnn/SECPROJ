@@ -7,6 +7,7 @@ import { Emblem } from "@/components/ui";
 import { LORE } from "@/lib/ai/lore";
 import { AGENCIES, AGENCY_IDS } from "@/lib/game/agencies";
 import { ATTRIBUTE_IDS, ATTRIBUTES, DIFFICULTIES, SKILLS, skillsOf } from "@/lib/game/rules";
+import { findCity } from "@/lib/world/geo";
 
 export const metadata = { title: "Codex — LUCERNE" };
 
@@ -27,10 +28,15 @@ export default function CodexPage() {
       <article className="prose-narrative mx-auto max-w-3xl px-5 py-14 font-serif text-lg leading-relaxed text-ivory/90">
         <RichText text={LORE} variant="codex" />
 
-        <h2 className="mt-16 mb-4 border-b border-brass/30 pb-2 font-serif text-3xl text-brass-soft">Les Divisions</h2>
+        <h2 className="mt-16 mb-4 border-b border-brass/30 pb-2 font-serif text-3xl text-brass-soft">L'organisation</h2>
         <p>
-          Chaque agence organise ses agents à sa façon. On rejoint une première Division au Brevet, d'autres avec les grades. Hors mission,
-          elles accélèrent l'apprentissage de leurs compétences ; en mission, chacune offre une ressource, une fois.
+          Les trois agences ont la même charpente, chacune avec ses noms : une Direction (le Directeur et son Second), un Cercle d'élite aux
+          sièges nommés, une dizaine de Stations dans de vraies villes, trois Branches de soutien et une Académie. On ne rejoint pas une
+          Branche : on s'entend (ou non) avec son chef. La spécialisation vient de la Station d'affectation et du siège.
+        </p>
+        <p>
+          Prospect, Cadet, Officier ; puis deux voies. Le terrain : Titulaire d'un siège, puis Doyen du Cercle. Le commandement : Chef de
+          station, puis Contrôleur. Pour diriger l'agence, il faut avoir siégé au Cercle et commandé.
         </p>
       </article>
 
@@ -41,31 +47,53 @@ export default function CodexPage() {
             <div key={id} className="rounded-sm border" style={{ borderColor: tint(a.color, 35), background: tint(a.color, 4) }}>
               <div className="px-4 py-3" style={{ background: tint(a.color, 11) }}>
                 <p className="font-serif text-2xl tracking-[0.12em]" style={{ color: a.color }}>
-                  {a.name} · {a.divisionTerm.plural}
+                  {a.name} · {a.circle.name}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">{a.organization}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">{a.circle.description}</p>
               </div>
               <ul className="divide-y divide-white/[0.05]">
-                {a.divisions.map((d) => (
-                  <li key={d.id} className="px-4 py-3">
+                {a.seats.map((s) => (
+                  <li key={s.id} className="px-4 py-2.5">
                     <p className="font-serif text-lg" style={{ color: a.color }}>
-                      {d.name}
+                      {s.number}. {s.name}
                     </p>
-                    <p className="text-xs text-ivory/85">{d.role}</p>
+                    <p className="text-xs text-ivory/80">{s.heritage}</p>
                     <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                      {d.skills.map((s) => (
-                        <span key={s} className="inline-flex items-center gap-1 text-[11px]" style={{ color: ATTRIBUTES[SKILLS[s].attribute].color }}>
-                          <SkillGlyph skill={s} className="h-3 w-3" />
-                          {SKILLS[s].label}
+                      {s.specialty.map((k) => (
+                        <span key={k} className="inline-flex items-center gap-1 text-[11px]" style={{ color: ATTRIBUTES[SKILLS[k].attribute].color }}>
+                          <SkillGlyph skill={k} className="h-3 w-3" />
+                          {SKILLS[k].label}
                         </span>
                       ))}
                     </p>
                     <p className="mt-1 text-xs text-muted">
-                      <span style={{ color: a.color }}>✦ {d.resource.name}.</span> {d.resource.description}
+                      <span style={{ color: a.color }}>✦ {s.signature.name}.</span> {s.signature.description}
                     </p>
                   </li>
                 ))}
               </ul>
+              <div className="border-t px-4 py-3" style={{ borderColor: tint(a.color, 25) }}>
+                <p className="label mb-2" style={{ color: a.color }}>
+                  Les Branches
+                </p>
+                <ul className="space-y-2">
+                  {a.branches.map((b) => (
+                    <li key={b.id}>
+                      <p className="font-serif text-base">{b.name}</p>
+                      <p className="text-xs text-muted">
+                        {b.role} Chef : {b.chief.name}.
+                      </p>
+                      <p className="text-xs text-ivory/80">
+                        <span style={{ color: a.color }}>⚙ {b.support.name}.</span> {b.support.description}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="label mt-3 mb-1" style={{ color: a.color }}>
+                  Les Stations
+                </p>
+                <p className="text-xs text-muted">{a.stations.map((c) => findCity(c)?.name ?? c).join(" · ")}</p>
+              </div>
             </div>
           );
         })}

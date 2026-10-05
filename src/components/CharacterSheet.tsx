@@ -25,9 +25,12 @@ import {
   skillsOf,
   xpToNext,
 } from "@/lib/game/rules";
-import { AGENCIES, DIVISION_SKILL_REQUIREMENT, divisionLimit, findDivision, type DivisionDef } from "@/lib/game/agencies";
+import { AGENCIES, SEAT_XP_BONUS, findSeat } from "@/lib/game/agencies";
 import { formatDate } from "@/lib/game/calendar";
+import { branchFavor } from "@/lib/game/command";
+import { heatLabel, injuryMalus, legendCap } from "@/lib/game/field";
 import {
+  BRANCH_FAVOR_MIN,
   CARRY_LIMIT,
   RELATION_LIMIT,
   canSpendOnPole,
@@ -35,7 +38,7 @@ import {
   capFor,
   currentAge,
   currentDate,
-  nextRank,
+  nextRanks,
   rankMissing,
   resourceAvailable,
   skillTotal,
@@ -59,9 +62,9 @@ import type {
 } from "@/lib/game/types";
 import { PoleEmblem, SkillGlyph } from "./glyphs";
 import { RichText } from "./RichText";
-import { DivisionSigil } from "./sigils";
+import { BranchSigil, SeatSigil } from "./sigils";
 import { Bar, RankBadge } from "./ui";
-import { findCity } from "@/lib/world/geo";
+import { findCity, findCountry } from "@/lib/world/geo";
 
 type Tab = "fiche" | "agent" | "relations" | "sac" | "carnet" | "dossier";
 
@@ -78,13 +81,13 @@ interface SheetProps {
   state: GameState;
   /** Absent : fiche en lecture seule (par exemple pendant qu'un tour s'écrit). */
   onChange?: (next: GameState) => void;
-  /** Lance un tour de jeu (contacter, utiliser un objet, ressource de Division). */
+  /** Lance un tour de jeu (contacter, utiliser un objet, soutien de siège ou de Branche). */
   onAction?: (action: PlayerAction) => void;
-  /** Ouvre la cérémonie de choix de Division (présent seulement quand un choix est possible). */
-  onOpenDivisions?: () => void;
+  /** Ouvre la cérémonie de promotion (présent seulement quand une promotion est possible). */
+  onOpenPromotion?: () => void;
 }
 
-export function CharacterSheet({ state, onChange, onAction, onOpenDivisions }: SheetProps) {
+export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: SheetProps) {
   const [tab, setTab] = useState<Tab>("fiche");
   const activeRelations = state.relations.filter((r) => r.status !== "archive" && r.status !== "mort").length;
   return (
@@ -108,7 +111,7 @@ export function CharacterSheet({ state, onChange, onAction, onOpenDivisions }: S
       </nav>
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-5">
         {tab === "fiche" && <Fiche state={state} onChange={onChange} onAction={onAction} />}
-        {tab === "agent" && <AgentTab state={state} onOpenDivisions={onOpenDivisions} />}
+        {tab === "agent" && <AgentTab state={state} onOpenPromotion={onOpenPromotion} />}
         {tab === "relations" && <Relations state={state} onChange={onChange} onAction={onAction} />}
         {tab === "sac" && <Inventory state={state} onChange={onChange} onAction={onAction} />}
         {tab === "carnet" && <Carnet state={state} />}
@@ -128,11 +131,9 @@ function Fiche({ state, onChange, onAction }: SheetProps) {
   const rank = RANKS[c.rank];
   const origin = findOrigin(c.originId);
   const healthColor = c.health <= 3 ? "var(--color-stamp)" : c.health <= c.healthMax / 2 ? "var(--color-partial)" : "var(--pole-corps)";
-  const divisionSkills = new Map<SkillId, DivisionDef>();
-  for (const id of c.divisions) {
-    const d = findDivision(c.identity.agency, id);
-    d?.skills.forEach((s) => divisionSkills.set(s, d));
-  }
+  const seat = findSeat(c.identity.agency, c.seat);
+  const seatSkills = new Set<SkillId>(seat?.specialty ?? []);
+  const station = findCity(c.station);
 
   return (
     <div className="space-y-6">
@@ -153,17 +154,32 @@ function Fiche({ state, onChange, onAction }: SheetProps) {
             <span className="text-ivory/90"> · {rank.label}</span>
             {c.rank === "aspirant" || c.rank === "prospect" ? <span className="text-muted"> · brassard {c.armband}</span> : null}
           </p>
-          {c.divisions.length > 0 && (
+          {(seat || station || c.matricule) && (
             <p className="mt-1 flex flex-wrap gap-1">
-              {c.divisions.map((id) => (
-                <span key={id} className="rounded-sm px-1.5 py-0.5 text-[10px] tracking-wide" style={{ background: tint(agency.color, 15), color: agency.color }}>
-                  {findDivision(c.identity.agency, id)?.name ?? id}
+              {seat && (
+                <span className="rounded-sm px-1.5 py-0.5 text-[10px] tracking-wide" style={{ background: tint(agency.color, 15), color: agency.color }}>
+                  {agency.circle.member} · {seat.name}
                 </span>
-              ))}
+              )}
+              {station && (
+                <span className="rounded-sm px-1.5 py-0.5 text-[10px] tracking-wide" style={{ background: tint(agency.color, 15), color: agency.color }}>
+                  Station de {station.name}
+                </span>
+              )}
+              {c.matricule && !c.codename && <span className="rounded-sm bg-line/60 px-1.5 py-0.5 font-mono text-[10px] text-muted">{c.matricule}</span>}
             </p>
           )}
         </div>
       </header>
+
+      {c.prison && (
+        <section className="rounded-sm border border-fail/50 bg-fail/[0.08] p-3 text-sm">
+          <p className="label text-fail">Détenu</p>
+          <p className="mt-0.5">
+            {c.prison.captor}, à {findCity(c.prison.cityId)?.name ?? "?"}. Évasion {c.prison.escape}/100 · secrets livrés {c.prison.leaked}/100.
+          </p>
+        </section>
+      )}
 
       {state.mission && <MissionPanel state={state} onAction={onAction} />}
 
@@ -210,13 +226,16 @@ function Fiche({ state, onChange, onAction }: SheetProps) {
             key={a}
             pole={a}
             c={c}
-            divisionSkills={divisionSkills}
+            seatSkills={seatSkills}
             agencyColor={agency.color}
             onSpendSkill={onChange && ((sk) => onChange(spendSkillPoint(state, sk)))}
             onSpendPole={onChange && (() => onChange(spendPolePoint(state, a)))}
           />
         ))}
       </section>
+
+      <InjuriesSection state={state} />
+      <LanguagesSection state={state} />
 
       <section>
         <h3 className="label mb-2">Traits</h3>
@@ -251,7 +270,13 @@ function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: Pl
   const m = state.mission!;
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
-  const divName = (id: string) => findDivision(c.identity.agency, id)?.name ?? id;
+  const seat = findSeat(c.identity.agency, c.seat);
+  const legend = c.legends.find((l) => l.id === m.legend);
+  const team = m.team.map((id) => state.roster.find((o) => o.id === id)).filter((o) => o !== undefined);
+  const supports = [
+    ...(seat ? [{ id: "seat", name: seat.signature.name, from: seat.name, description: seat.signature.description }] : []),
+    ...(c.rank !== "aspirant" ? agency.branches.map((b) => ({ id: b.id, name: b.support.name, from: b.name, description: b.support.description })) : []),
+  ];
   const [confirm, setConfirm] = useState<string | null>(null);
   return (
     <section className="rounded-sm border p-3" style={{ borderColor: tint(agency.color, 45), background: tint(agency.color, 7) }}>
@@ -261,8 +286,11 @@ function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: Pl
       <p className="mt-0.5 font-serif text-lg leading-tight">{m.name}</p>
       <p className="mt-1 text-xs text-ivory/85">{m.objective}</p>
       <p className="mt-1.5 text-[11px] text-muted">
-        Menée par {divName(m.lead)}
-        {m.support.length > 0 && ` · soutien : ${m.support.map(divName).join(", ")}`} · depuis le jour {m.startDay}
+        {findCity(m.cityId)?.name} · {team.length ? `avec ${team.map((o) => o.codename || o.name.split(" ")[0]).join(", ")}` : "seul"} · depuis le jour {m.startDay}
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted">
+        Couverture : {legend ? `${legend.name} (crédibilité ${legend.credibility})` : m.cover}
+        {m.blown && <span className="text-fail"> · grillée</span>}
       </p>
       <div className="mt-2">
         <div className="flex justify-between text-[10px] tracking-[0.12em] text-muted uppercase">
@@ -277,27 +305,25 @@ function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: Pl
           <div className="h-full rounded-full transition-all duration-700" style={{ width: `${(m.current / m.nodes.length) * 100}%`, background: agency.color }} />
         </div>
       </div>
-      {c.divisions.length > 0 && (
+      {supports.length > 0 && (
         <div className="mt-3 space-y-1.5 border-t pt-2.5" style={{ borderColor: tint(agency.color, 25) }}>
-          <p className="label">Ressources de Division · une fois par mission</p>
-          {c.divisions.map((id) => {
-            const d = findDivision(c.identity.agency, id);
-            if (!d) return null;
+          <p className="label">Soutiens · une fois par mission</p>
+          {supports.map(({ id, name, from, description }) => {
             const available = resourceAvailable(state, id);
             return (
               <div key={id} className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <p className={`text-xs ${available ? "text-ivory" : "text-faint line-through"}`}>
-                    ✦ {d.resource.name} <span className="text-faint">· {d.name}</span>
+                    {id === "seat" ? "✦" : "⚙"} {name} <span className="text-faint">· {from}</span>
                   </p>
-                  <p className="text-[11px] text-muted">{d.resource.description}</p>
+                  <p className="text-[11px] text-muted">{description}</p>
                 </div>
                 {available && onAction && (
                   <button
                     onClick={() => {
                       if (confirm === id) {
                         setConfirm(null);
-                        onAction({ type: "resource", division: id });
+                        onAction({ type: "resource", source: id });
                       } else setConfirm(id);
                     }}
                     onBlur={() => setConfirm(null)}
@@ -310,6 +336,7 @@ function MissionPanel({ state, onAction }: { state: GameState; onAction?: (a: Pl
               </div>
             );
           })}
+          <p className="text-[10px] text-faint">Le coup signature ne vaut que sur certaines étapes ; une Branche qui ne t'estime pas ({BRANCH_FAVOR_MIN} ou moins) refuse son aide.</p>
         </div>
       )}
     </section>
@@ -331,14 +358,14 @@ function SpendButton({ onClick, title }: { onClick: () => void; title: string })
 function PoleBlock({
   pole,
   c,
-  divisionSkills,
+  seatSkills,
   agencyColor,
   onSpendSkill,
   onSpendPole,
 }: {
   pole: AttributeId;
   c: Character;
-  divisionSkills: Map<SkillId, DivisionDef>;
+  seatSkills: Set<SkillId>;
   agencyColor: string;
   onSpendSkill?: (s: SkillId) => void;
   onSpendPole?: () => void;
@@ -366,7 +393,8 @@ function PoleBlock({
           const talent = traitSkillMod(c, s);
           const atCap = sk.rank >= cap;
           const progress = Math.min(1, sk.xp / xpToNext(sk.rank));
-          const division = divisionSkills.get(s);
+          const inSeat = seatSkills.has(s);
+          const hurt = injuryMalus(c, s);
           return (
             <li key={s} className="flex items-center gap-2.5 px-3 py-1.5" title={`${SKILLS[s].description}${talent ? ` (traits ${talent > 0 ? "+" : ""}${talent})` : ""}`}>
               <SkillGlyph skill={s} className="h-4 w-4 shrink-0" />
@@ -378,9 +406,14 @@ function PoleBlock({
                       ★
                     </span>
                   )}
-                  {division && (
-                    <span className="text-[10px]" style={{ color: agencyColor }} title={`${division.name} : apprentissage accéléré hors mission`}>
+                  {inSeat && (
+                    <span className="text-[10px]" style={{ color: agencyColor }} title={`Spécialité de ton siège : +${SEAT_XP_BONUS} d'expérience hors mission`}>
                       ✦
+                    </span>
+                  )}
+                  {hurt < 0 && (
+                    <span className="font-mono text-[10px] text-fail" title="Malus de blessure en mission">
+                      {hurt}
                     </span>
                   )}
                 </div>
@@ -411,7 +444,7 @@ function PoleBlock({
 }
 
 /* ------------------------------------------------------------------ */
-/* Agent : agence, grade, Divisions, carrière                          */
+/* Agent : agence, grade, organisation, carrière                        */
 /* ------------------------------------------------------------------ */
 
 const PROGRESS_ICONS: Record<ProgressKind, string> = {
@@ -423,21 +456,21 @@ const PROGRESS_ICONS: Record<ProgressKind, string> = {
   pin: "✦",
   points: "+",
   codename: "«»",
-  division: "❖",
+  seat: "❖",
   age: "○",
   money: "€",
 };
 
-function AgentTab({ state, onOpenDivisions }: { state: GameState; onOpenDivisions?: () => void }) {
+function AgentTab({ state, onOpenPromotion }: { state: GameState; onOpenPromotion?: () => void }) {
   const c = state.character;
   const w = state.world;
   const agency = AGENCIES[c.identity.agency];
   const age = currentAge(state);
-  const next = nextRank(c);
-  const missing = next ? rankMissing(c, w, age, next) : [];
+  const nexts = nextRanks(state).filter((r) => r !== "aspirant");
   const phaseIndex = PHASE_IDS.indexOf(w.phase);
   const currentOrder = RANKS[c.rank].order;
-  const meritTarget = next ? RANKS[next].merit : 0;
+  const meritTarget = nexts.length ? Math.min(...nexts.map((r) => RANKS[r].merit).filter((m) => m > 0), Infinity) : 0;
+  const hasTarget = Number.isFinite(meritTarget) && meritTarget > 0;
 
   return (
     <div className="space-y-7">
@@ -497,24 +530,33 @@ function AgentTab({ state, onOpenDivisions }: { state: GameState; onOpenDivision
             <span className="label">Mérite</span>
             <span className="font-mono text-xs text-ivory/80">
               {formatMerit(c.merit)}
-              {next && meritTarget > 0 && ` / ${meritTarget}`}
+              {hasTarget && ` / ${meritTarget}`}
               {c.blames > 0 && <span className="ml-2 text-fail">{c.blames} blâme{c.blames > 1 ? "s" : ""}</span>}
             </span>
           </div>
-          {next && meritTarget > 0 && (
+          {hasTarget && (
             <div className="h-1.5 overflow-hidden rounded-full bg-line">
               <div className="h-full rounded-full bg-brass transition-all duration-700" style={{ width: `${Math.min(100, (c.merit / meritTarget) * 100)}%` }} />
             </div>
           )}
-          {next && (
-            <p className="mt-2 text-xs text-muted">
-              Prochain grade : <span className="text-ivory">{RANKS[next].label}</span>
-              {missing.length === 0 ? (
-                <span className="text-success"> — conditions remplies, la promotion dépend de ta hiérarchie.</span>
-              ) : (
-                <> — il manque : {missing.join(" ; ")}.</>
-              )}
-            </p>
+          {nexts.length > 1 && <p className="mt-2 text-[11px] text-faint">Deux voies s'ouvrent : le terrain (le Cercle) ou le commandement.</p>}
+          {nexts.map((r) => {
+            const missing = rankMissing(state, r);
+            return (
+              <p key={r} className="mt-2 text-xs text-muted">
+                {RANKS[r].track === "terrain" ? "Terrain" : RANKS[r].track === "commandement" ? "Commandement" : "Prochain grade"} : <span className="text-ivory">{RANKS[r].label}</span>
+                {missing.length === 0 ? <span className="text-success"> — conditions remplies : à toi de la demander.</span> : <> — il manque : {missing.join(" ; ")}.</>}
+              </p>
+            );
+          })}
+          {onOpenPromotion && (
+            <button
+              onClick={onOpenPromotion}
+              className="mt-3 w-full rounded-sm px-3 py-2.5 text-[11px] font-bold tracking-[0.18em] uppercase"
+              style={{ background: agency.color, color: "var(--color-ink)" }}
+            >
+              ❖ Demander ma promotion
+            </button>
           )}
           <p className="mt-2 text-[11px] leading-relaxed text-faint">
             Une mission rapporte selon son importance (locale 1, régionale 2, continentale 4, mondiale 8) multipliée par le résultat (partiel ×0,5, réussite ×1, éclatant ×1,5). Un acte remarquable : +0,5 à +4. Un blâme : −3.
@@ -527,7 +569,7 @@ function AgentTab({ state, onOpenDivisions }: { state: GameState; onOpenDivision
         <ol className="space-y-1.5">
           {RANK_IDS.map((r) => {
             const def = RANKS[r];
-            const reached = def.order <= currentOrder;
+            const reached = r === c.rank || (def.order < currentOrder && (def.track === "tronc" || def.track === RANKS[c.rank].track || (c.feats.seated && def.track === "terrain")));
             const current = r === c.rank;
             return (
               <li
@@ -538,12 +580,12 @@ function AgentTab({ state, onOpenDivisions }: { state: GameState; onOpenDivision
                 <div className="min-w-0 flex-1">
                   <p className="flex items-baseline justify-between gap-2 text-sm">
                     {def.label}
-                    <span className="font-mono text-[10px] text-muted">
-                      {def.merit > 0 && `${def.merit} mér.`}
-                      {def.minAge > 0 && ` · ${def.minAge} ans`}
-                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted">{[def.merit > 0 && `${def.merit} mér.`, def.minAge > 0 && `${def.minAge} ans`].filter(Boolean).join(" · ")}</span>
                   </p>
-                  <p className="text-[11px] text-faint">{def.requirement}</p>
+                  <p className="text-[11px] text-faint">
+                    {def.track === "terrain" || def.track === "commandement" ? <span className="mr-1 tracking-[0.12em] uppercase">{def.track === "terrain" ? "Voie du terrain." : "Voie du commandement."}</span> : null}
+                    {def.requirement}
+                  </p>
                   {current || !reached ? <p className="text-[11px] text-muted">{def.powers}</p> : null}
                 </div>
               </li>
@@ -552,7 +594,9 @@ function AgentTab({ state, onOpenDivisions }: { state: GameState; onOpenDivision
         </ol>
       </section>
 
-      <DivisionsSection state={state} onOpen={onOpenDivisions} />
+      <OrganisationSection state={state} />
+      <LegendsSection state={state} />
+      <HeatSection state={state} />
 
       <section>
         <h3 className="label mb-3">Parcours</h3>
@@ -661,82 +705,215 @@ function Row({ label, value, valueClass = "" }: { label: string; value: string; 
   );
 }
 
-function DivisionsSection({ state, onOpen }: { state: GameState; onOpen?: () => void }) {
+/** Ta place dans l'organisation : ton siège ou ta Station, et les trois Branches qui te soutiennent. */
+function OrganisationSection({ state }: { state: GameState }) {
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
-  const limit = divisionLimit(c.identity.agency, c.rank);
-  const [open, setOpen] = useState<string | null>(null);
-  const term = agency.divisionTerm;
-  const eligibility = (d: DivisionDef): string | null => {
-    if (c.divisions.includes(d.id)) return null;
-    if (limit === 0) return `Choix au Brevet (${BREVET_AGE} ans).`;
-    if (c.divisions.length >= limit) return `Limite atteinte pour ton grade (${limit}).`;
-    if (d.requiresDivisions && c.divisions.length < d.requiresDivisions)
-      return `Sur invitation, après ${d.requiresDivisions} ${d.requiresDivisions > 1 ? term.plural : term.singular}.`;
-    if (c.divisions.length > 0 && !d.skills.some((s) => skillTotal(c, s) >= DIVISION_SKILL_REQUIREMENT))
-      return `Il faut ${DIVISION_SKILL_REQUIREMENT} dans une de ses compétences.`;
-    return "Accessible : demande-le en jeu.";
-  };
+  const seat = findSeat(c.identity.agency, c.seat);
+  const station = findCity(c.station);
+  const officer = RANKS[c.rank].order >= RANKS.agent.order;
   return (
     <section>
-      <h3 className="label mb-1">
-        {term.plural} · {c.divisions.length}/{limit || "—"}
-      </h3>
+      <h3 className="label mb-1">Organisation</h3>
       <p className="mb-3 text-xs leading-relaxed text-muted">{agency.organization}</p>
-      {onOpen && (
-        <button
-          onClick={onOpen}
-          className="mb-3 w-full rounded-sm px-3 py-2.5 text-[11px] font-bold tracking-[0.18em] uppercase"
-          style={{ background: agency.color, color: "var(--color-ink)" }}
-        >
-          ❖ {agency.ceremony.name} — choisir
-        </button>
-      )}
-      <ul className="space-y-2">
-        {agency.divisions.map((d) => {
-          const mine = c.divisions.includes(d.id);
-          const note = eligibility(d);
-          const expanded = mine || open === d.id;
-          return (
-            <li
-              key={d.id}
-              className={`rounded-sm border p-2.5 ${mine ? "" : "cursor-pointer"}`}
-              style={{ borderColor: mine ? agency.color : "var(--color-line)", background: mine ? tint(agency.color, 8) : undefined }}
-              onClick={() => !mine && setOpen(open === d.id ? null : d.id)}
-            >
-              <p className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 font-serif text-base" style={{ color: mine ? agency.color : undefined }}>
-                  <span style={{ color: agency.color, opacity: mine ? 1 : 0.6 }}>
-                    <DivisionSigil agency={c.identity.agency} division={d.id} className="h-7 w-7" />
-                  </span>
-                  {d.name}
+      {seat ? (
+        <div className="mb-3 flex gap-3 rounded-sm border p-2.5" style={{ borderColor: agency.color, background: tint(agency.color, 8) }}>
+          <span style={{ color: agency.color }}>
+            <SeatSigil agency={agency.id} seat={seat.id} number={seat.number} className="h-12 w-12" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-serif text-base" style={{ color: agency.color }}>
+              {seat.name}
+            </p>
+            <p className="text-[11px] text-muted">{seat.heritage}</p>
+            <p className="mt-1 text-xs text-ivory/85">
+              <span style={{ color: agency.color }}>✦ {seat.signature.name}.</span> {seat.signature.description}
+            </p>
+            <p className="mt-1 flex flex-wrap gap-x-2.5 text-[11px]">
+              {seat.specialty.map((s) => (
+                <span key={s} className="inline-flex items-center gap-1" style={{ color: ATTRIBUTES[SKILLS[s].attribute].color }}>
+                  <SkillGlyph skill={s} className="h-3 w-3" />
+                  {SKILLS[s].label}
                 </span>
-                {mine && <span className="text-[10px] tracking-[0.15em] uppercase" style={{ color: agency.color }}>Membre</span>}
-              </p>
-              <p className="text-xs text-muted">{d.role}</p>
-              {expanded && (
-                <>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                    {d.skills.map((s) => (
-                      <span key={s} className="inline-flex items-center gap-1 text-[11px]" style={{ color: ATTRIBUTES[SKILLS[s].attribute].color }}>
-                        <SkillGlyph skill={s} className="h-3 w-3" />
-                        {SKILLS[s].label}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="mt-1.5 text-xs text-ivory/80">
-                    <span style={{ color: agency.color }}>✦ {d.resource.name}.</span> {d.resource.description}
-                  </p>
-                </>
-              )}
-              {note && <p className="mt-1 text-[11px] text-faint">{note}</p>}
+              ))}
+            </p>
+          </div>
+        </div>
+      ) : station ? (
+        <p className="mb-3 rounded-sm border border-line bg-night/40 p-2.5 text-xs text-muted">
+          <span className="text-ivory">Station de {station.name}</span> ({findCountry(station.country)?.name}) : ta région est ton terrain (+1 sur les missions qui s'y déroulent).
+          {c.rank === "agent" && ` Un siège du Cercle (${agency.circle.name}) se libère environ une fois par an.`}
+        </p>
+      ) : (
+        <p className="mb-3 text-xs text-faint">Ton affectation se décide au Brevet : une Station de l'agence.</p>
+      )}
+      <p className="label mb-2">Les trois Branches</p>
+      <ul className="space-y-2">
+        {agency.branches.map((b) => {
+          const favor = branchFavor(state, b.id);
+          const color = favor >= 20 ? "var(--color-success)" : favor <= BRANCH_FAVOR_MIN ? "var(--color-fail)" : "var(--color-muted)";
+          return (
+            <li key={b.id} className="flex gap-2.5 rounded-sm border border-line p-2.5">
+              <span style={{ color: agency.color, opacity: 0.8 }}>
+                <BranchSigil agency={agency.id} branch={b.id} className="h-9 w-9" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-baseline justify-between gap-2">
+                  <span className="font-serif text-base">{b.name}</span>
+                  <span className="font-mono text-[11px]" style={{ color }} title="Son estime pour toi">
+                    {favor > 0 ? "+" : ""}
+                    {favor}
+                  </span>
+                </p>
+                <p className="text-[11px] text-muted">{b.role}</p>
+                <p className="mt-0.5 text-[11px] text-ivory/80">
+                  {b.chief.name} — {b.chief.description}
+                </p>
+                <p className="mt-1 text-[11px]">
+                  <span style={{ color: agency.color }}>⚙ {b.support.name}.</span> <span className="text-muted">{b.support.description}</span>
+                </p>
+                {officer && favor <= BRANCH_FAVOR_MIN && <p className="text-[10px] text-fail">Refuse de t'aider en mission tant que la relation ne s'arrange pas.</p>}
+              </div>
             </li>
           );
         })}
       </ul>
       <p className="mt-2 text-[11px] text-faint">
-        Hors mission, l'expérience gagnée sur les compétences de tes {term.plural} rapporte un point de plus. En mission, chacune offre sa ressource une fois.
+        {officer
+          ? "On ne rejoint pas une Branche : on s'entend (ou non) avec son chef. Passe du temps avec elles au planning ; chaque soutien en mission entame un peu leur estime."
+          : "Les Branches ne travaillent qu'avec les officiers brevetés."}
       </p>
+    </section>
+  );
+}
+
+/** Les fausses identités : créées et entretenues au planning, grillées par l'exposition. */
+function LegendsSection({ state }: { state: GameState }) {
+  const c = state.character;
+  const cap = legendCap(c);
+  if (cap === 0 && c.legends.length === 0) return null;
+  return (
+    <section>
+      <h3 className="label mb-2">
+        Légendes · {c.legends.length}/{cap}
+      </h3>
+      {c.legends.length === 0 ? (
+        <p className="text-xs text-muted">Aucune. Construis-en une au planning (activité « Légende ») : une identité de couverture te protège à chaque faux pas en mission.</p>
+      ) : (
+        <ul className="space-y-2">
+          {c.legends.map((l) => (
+            <li key={l.id} className="rounded-sm border border-line p-2.5">
+              <p className="flex items-baseline justify-between gap-2">
+                <span className="font-serif text-base">{l.name}</span>
+                <span className="font-mono text-[10px] text-muted">créée J{l.createdDay}</span>
+              </p>
+              <p className="text-[11px] text-muted">
+                {l.profession}, {l.nationality}
+              </p>
+              <div className="mt-1.5 flex items-center gap-2 text-[10px] text-faint">
+                crédibilité
+                <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+                  <span className="block h-full rounded-full" style={{ width: `${l.credibility}%`, background: l.credibility >= 60 ? "var(--color-success)" : l.credibility >= 30 ? "var(--color-partial)" : "var(--color-fail)" }} />
+                </span>
+                {l.credibility}
+              </div>
+              {l.burned.length > 0 && <p className="mt-1 text-[11px] text-fail">Grillée en : {l.burned.join(", ")}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Ce que les services de chaque pays savent de toi. */
+function HeatSection({ state }: { state: GameState }) {
+  const entries = Object.entries(state.character.heat ?? {})
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (RANKS[state.character.rank].order < RANKS.aspirant.order) return null;
+  return (
+    <section>
+      <h3 className="label mb-2">Fiché par pays</h3>
+      {entries.length === 0 ? (
+        <p className="text-xs text-muted">Aucun service étranger ne s'intéresse à toi. Pour l'instant.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {entries.map(([code, v]) => (
+            <li key={code} className="flex items-center gap-2 text-xs">
+              <span className="w-28 truncate">{findCountry(code)?.name ?? code}</span>
+              <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+                <span className="block h-full rounded-full" style={{ width: `${v}%`, background: v >= 60 ? "var(--color-fail)" : v >= 30 ? "var(--color-partial)" : "var(--color-muted)" }} />
+              </span>
+              <span className={`w-20 text-right text-[10px] ${v >= 60 ? "text-fail" : "text-muted"}`}>
+                {heatLabel(v)} {v}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] text-faint">La notoriété monte avec le bruit de tes missions et baisse avec le temps (moins vite chez les puissances hostiles). Fiché, tu seras attendu à l'arrivée.</p>
+    </section>
+  );
+}
+
+/** Blessures en cours (avec leur malus) et séquelles permanentes. */
+function InjuriesSection({ state }: { state: GameState }) {
+  const list = state.character.injuries ?? [];
+  if (!list.length) return null;
+  const day = state.world.day;
+  return (
+    <section>
+      <h3 className="label mb-2 text-fail">Blessures et séquelles</h3>
+      <ul className="space-y-2">
+        {list.map((i) => (
+          <li key={i.id} className="border-l-2 border-fail/50 pl-3">
+            <p className="flex items-baseline justify-between gap-2 text-sm">
+              <span>{i.name}</span>
+              <span className="font-mono text-[10px] text-muted">{i.healDay === undefined ? "à vie" : i.healDay > day ? `guérie dans ${i.healDay - day} j` : "presque guérie"}</span>
+            </p>
+            <p className="text-xs text-muted">{i.description}</p>
+            <p className="text-[11px] text-fail/90">
+              {Object.entries(i.malus)
+                .map(([k, v]) => `${SKILLS[k as SkillId].label} ${v}`)
+                .join(" · ")}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[11px] text-faint">Le repos accélère la guérison. Les séquelles, elles, restent.</p>
+    </section>
+  );
+}
+
+function LanguagesSection({ state }: { state: GameState }) {
+  const c = state.character;
+  const learning = Object.entries(c.learning ?? {}).sort((a, b) => b[1] - a[1]);
+  if (!c.spoken?.length && !learning.length) return null;
+  return (
+    <section>
+      <h3 className="label mb-2">Langues</h3>
+      <p className="flex flex-wrap gap-1.5">
+        {c.spoken.map((l) => (
+          <span key={l} className="rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-ivory/90">
+            {l}
+          </span>
+        ))}
+      </p>
+      {learning.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {learning.map(([l, v]) => (
+            <li key={l} className="flex items-center gap-2 text-[11px] text-muted">
+              <span className="w-24 truncate">{l}</span>
+              <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+                <span className="block h-full rounded-full bg-[var(--pole-esprit)]" style={{ width: `${v}%` }} />
+              </span>
+              <span className="font-mono">{v}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-1.5 text-[11px] text-faint">Parler la langue du pays : +1 au contact des gens en mission ; sinon −1.</p>
     </section>
   );
 }

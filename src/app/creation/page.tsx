@@ -442,8 +442,12 @@ function AgencyStep({ draft, setDraft }: { draft: Draft; setDraft: React.Dispatc
             {chosen.director.name}, « {chosen.director.codename} ». {chosen.director.description}
           </p>
           <p>
-            <span className="text-ivory/80">{chosen.divisionTerm.plural}. </span>
-            {chosen.divisions.map((d) => d.name).join(", ")}.
+            <span className="text-ivory/80">Le Cercle. </span>
+            {chosen.circle.name.replace(/^./, (x) => x.toUpperCase())} : {chosen.seats.length} {chosen.circle.seatTerm.plural}, l'élite de terrain.
+          </p>
+          <p>
+            <span className="text-ivory/80">Les Branches. </span>
+            {chosen.branches.map((b) => b.name).join(", ")}.
           </p>
         </div>
         <Field label="Pays qui te propose" hint="Ta nationalité : elle fixe tes langues de départ et l'endroit où tout a commencé.">

@@ -702,8 +702,6 @@ export interface StateUpdate {
   objets_gagnes?: ItemInput[];
   objets_perdus?: string[];
   points_competence?: number;
-  /** Division rejointe (choix du joueur). */
-  division?: string;
   /** Mérite pour un acte remarquable (positif) ; un blâme se donne avec `blame`. */
   merite?: { montant: number; motif: string };
   blame?: string;
@@ -1086,9 +1084,14 @@ export function resourceAvailable(state: GameState, source: string): boolean {
   }
   const branch = AGENCIES[c.identity.agency].branches.find((b) => b.id === source);
   if (!branch || c.rank === "aspirant") return false;
+  // Le chef de la Branche ne rend service que si la relation le permet.
+  if ((state.command.branchFavor?.[branch.id] ?? 0) < BRANCH_FAVOR_MIN) return false;
   const chief = state.relations.find((r) => r.name === branch.chief.name);
   return !chief || chief.affinity >= -10;
 }
+
+/** En dessous de cette estime, une Branche refuse son soutien en mission. */
+export const BRANCH_FAVOR_MIN = -20;
 
 /** Marque un soutien comme utilisé pour la mission en cours. */
 export function markResourceUsed(state: GameState, source: string): GameState {

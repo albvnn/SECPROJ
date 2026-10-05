@@ -33,13 +33,14 @@ import { WeekPlanner } from "./WeekPlanner";
 import { MissionConsole, OpsBoard } from "./Operations";
 import { WorldMap } from "./WorldMap";
 import { CommandPanel, TeamPanel } from "./Command";
+import { IntelBoard } from "./Intel";
 import { ACTIVITIES, defaultPlan, planError } from "@/lib/game/planner";
 import { describeAction } from "@/lib/game/actions";
 import { canStartMission } from "@/lib/game/missions";
 import { RANKS } from "@/lib/game/rules";
 import type { ActivityChoice, RankId } from "@/lib/game/types";
 
-type MainTab = "recit" | "semaine" | "operations" | "carte" | "equipe" | "commandement";
+type MainTab = "recit" | "semaine" | "operations" | "renseignement" | "carte" | "equipe" | "commandement";
 
 interface LiveTurn {
   player: string | null;
@@ -113,6 +114,12 @@ export function GameScreen({ initial }: { initial: GameState }) {
   }, [promoKey, busy, promotions]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Arrestation, libération, promotion : le planning prévu n'est plus valable, on repart d'un planning type.
+  const planKey = `${Boolean(state.character.prison)}:${state.character.rank}`;
+  useEffect(() => {
+    setPlan((p) => (planError(state, p) ? defaultPlan(state) : p));
+  }, [planKey]);
 
   const play = useCallback(
     async (action: PlayerAction, base?: GameState) => {
@@ -322,9 +329,17 @@ export function GameScreen({ initial }: { initial: GameState }) {
               ) : (
                 <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
                   {tab === "semaine" && (
-                    <WeekPlanner state={state} plan={plan} setPlan={setPlan} busy={busy} onPlay={state.world.phase === "base" ? () => play({ type: "week", plan }) : undefined} />
+                    <WeekPlanner
+                      state={state}
+                      plan={plan}
+                      setPlan={setPlan}
+                      busy={busy}
+                      onChange={busy ? undefined : commit}
+                      onPlay={state.world.phase === "base" ? () => play({ type: "week", plan }) : undefined}
+                    />
                   )}
                   {tab === "operations" && <OpsBoard state={state} busy={busy} onChange={commit} onAction={(a) => play(a)} />}
+                  {tab === "renseignement" && <IntelBoard state={state} />}
                   {tab === "equipe" && <TeamPanel state={state} onChange={busy ? undefined : commit} />}
                   {tab === "commandement" && <CommandPanel state={state} onChange={busy ? undefined : commit} />}
                 </div>
@@ -493,6 +508,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
             plan={plan}
             onPlayWeek={() => play({ type: "week", plan })}
             onAction={(a) => play(a)}
+            onChange={commit}
             openTab={setTab}
           />
           </>
@@ -507,7 +523,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
           <CharacterSheet
             state={state}
             onChange={busy ? undefined : commit}
-            onOpenDivisions={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
+            onOpenPromotion={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
             onAction={
               busy || state.log.length === 0
                 ? undefined
@@ -750,8 +766,11 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
   const started = state.world.phase !== "dossier";
   const tabs: { id: MainTab; label: string; badge?: number }[] = [
     { id: "recit", label: "Récit" },
-    ...(state.world.phase === "base" ? [{ id: "semaine" as const, label: c.rank === "aspirant" ? "Académie" : "Semaine", badge: state.duties.filter((d) => d.status === "ouvert").length }] : []),
+    ...(state.world.phase === "base"
+      ? [{ id: "semaine" as const, label: c.prison ? "Cellule" : c.rank === "aspirant" ? "Académie" : "Semaine", badge: state.duties.filter((d) => d.status === "ouvert").length }]
+      : []),
     ...(c.rank !== "prospect" ? [{ id: "operations" as const, label: "Opérations", badge: state.offers.length }] : []),
+    ...(c.rank !== "prospect" ? [{ id: "renseignement" as const, label: "Renseignement", badge: state.world.geo.threats.filter((t) => t.known && (t.capstone || t.progress >= 75)).length }] : []),
     { id: "carte", label: "Carte" },
     { id: "equipe", label: "Équipe" },
     ...(RANKS[c.rank].order >= RANKS.agent.order ? [{ id: "commandement" as const, label: "Commandement" }] : []),
@@ -834,6 +853,7 @@ function Composer({
   plan,
   onPlayWeek,
   onAction,
+  onChange,
   openTab,
 }: {
   state: GameState;
@@ -848,6 +868,7 @@ function Composer({
   plan: ActivityChoice[];
   onPlayWeek: () => void;
   onAction: (a: PlayerAction) => void;
+  onChange: (s: GameState) => void;
   openTab: (t: MainTab) => void;
 }) {
   if (state.log.length === 0 && !busy) return null;
@@ -857,7 +878,7 @@ function Composer({
     return (
       <div className="shrink-0 border-t border-line bg-night/95">
         <div className="mx-auto max-w-[56rem] px-5 py-4 sm:px-8">
-          <MissionConsole state={state} busy={busy} onAction={onAction} />
+          <MissionConsole state={state} busy={busy} onAction={onAction} onChange={onChange} />
         </div>
       </div>
     );

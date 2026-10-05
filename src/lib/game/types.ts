@@ -738,7 +738,7 @@ export type HqModule = "laboratoire" | "academie" | "salle_crise" | "hangar" | "
 
 export interface AgencyCommand {
   hq: Record<HqModule, number>;
-  /** Budget mensuel par Division (en millions d'euros). */
+  /** Budget mensuel par Branche (en millions d'euros). */
   branchBudget: Record<string, number>;
   /** Crédit auprès des gouvernements membres (0 à 100). */
   councilFavor: number;

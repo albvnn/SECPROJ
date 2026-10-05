@@ -218,7 +218,7 @@ const ASSET_ROLES: [string, string][] = [
 ];
 
 export function assetCap(rank: RankId): number {
-  return ({ special: 2, chef: 3, controleur: 6, commandeur: 8, directeur: 10 } as Partial<Record<RankId, number>>)[rank] ?? 0;
+  return ({ titulaire: 3, doyen: 4, chef_station: 5, controleur: 8, directeur: 10 } as Partial<Record<RankId, number>>)[rank] ?? 0;
 }
 
 function recruitAsset(state: GameState, cityId: string, rng: Rng): Asset | null {

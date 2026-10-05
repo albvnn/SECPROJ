@@ -186,7 +186,7 @@ export function runEngineAction(state: GameState, action: PlayerAction, roll: ()
       return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: Boolean(r.report.event) };
     }
     case "mission_start": {
-      const r = startMission(state, action.offer, action.team, action.gadgets, rng);
+      const r = startMission(state, action.offer, action.team, action.gadgets, rng, action.legend);
       const m = r.state.mission!;
       const facts = `LE JOUEUR PART EN MISSION (préparée dans le jeu).\n${missionBrief(r.state, m)}\n\n${nextStepText(r.state)}`;
       return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: false };
