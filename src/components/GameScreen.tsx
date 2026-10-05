@@ -29,17 +29,20 @@ import { modelLabel } from "@/lib/ai/router";
 import { currentAge, currentDate, promotionsAvailable } from "@/lib/game/engine";
 import { formatDate } from "@/lib/game/calendar";
 import { tint } from "@/lib/ui/color";
-import { WeekPlanner } from "./WeekPlanner";
-import { MissionConsole, OpsBoard } from "./Operations";
+import { MissionConsole } from "./Operations";
 import { WorldMap } from "./WorldMap";
 import { CommandPanel, TeamPanel } from "./Command";
+import { IntelBoard } from "./Intel";
+import { HQ } from "./HQ";
+import { StoryCardView, StoryDocView } from "./StoryCards";
+import { weeklyUpkeep } from "@/lib/game/economy";
 import { ACTIVITIES, defaultPlan, planError } from "@/lib/game/planner";
 import { describeAction } from "@/lib/game/actions";
 import { canStartMission } from "@/lib/game/missions";
-import { RANKS } from "@/lib/game/rules";
+import { RANKS, formatEuros } from "@/lib/game/rules";
 import type { ActivityChoice, RankId } from "@/lib/game/types";
 
-type MainTab = "recit" | "semaine" | "operations" | "carte" | "equipe" | "commandement";
+type MainTab = "recit" | "qg" | "monde" | "agence";
 
 interface LiveTurn {
   player: string | null;
@@ -66,6 +69,29 @@ export function GameScreen({ initial }: { initial: GameState }) {
   const [error, setError] = useState<{ message: string; action: PlayerAction } | null>(null);
   const [draft, setDraft] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Sur grand écran, la fiche peut être rangée pour laisser toute la place au récit.
+  const [sheetPinned, setSheetPinned] = useState(true);
+  useEffect(() => {
+    try {
+      setSheetPinned(localStorage.getItem("lucerne:fiche") !== "rangee");
+    } catch {
+      /* stockage indisponible : fiche affichée */
+    }
+  }, []);
+  const toggleSheet = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+      setSheetPinned((p) => {
+        try {
+          localStorage.setItem("lucerne:fiche", p ? "rangee" : "affichee");
+        } catch {
+          /* rien */
+        }
+        return !p;
+      });
+    } else setSheetOpen((o) => !o);
+  };
+  const [worldView, setWorldView] = useState<"carte" | "renseignement">("carte");
+  const [agencyView, setAgencyView] = useState<"effectif" | "commandement">("effectif");
   const [storageWarning, setStorageWarning] = useState(false);
   const [rejection, setRejection] = useState<{ reason: string; suggestion: string; text: string } | null>(null);
   const [lastUsage, setLastUsage] = useState<Usage | null>(null);
@@ -114,6 +140,12 @@ export function GameScreen({ initial }: { initial: GameState }) {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Arrestation, libération, promotion : le planning prévu n'est plus valable, on repart d'un planning type.
+  const planKey = `${Boolean(state.character.prison)}:${state.character.rank}`;
+  useEffect(() => {
+    setPlan((p) => (planError(state, p) ? defaultPlan(state) : p));
+  }, [planKey]);
+
   const play = useCallback(
     async (action: PlayerAction, base?: GameState) => {
       if (abortRef.current) return;
@@ -123,7 +155,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
       setRejection(null);
       stickToBottom.current = true;
       setLive({ player: describeAction(before, action) ?? actionLabel(action), segments: [], status: action.type === "week" ? "Une semaine passe…" : action.type === "mission_start" ? "Briefing en cours…" : "Le narrateur prend la plume…" });
-      if (action.type === "week" || action.type === "mission_start") setTab("recit");
+      if (action.type === "week" || action.type === "mission_start" || action.type === "promotion") setTab("recit");
       const controller = new AbortController();
       abortRef.current = controller;
       const result: { state: GameState | null; rejected: { reason: string; suggestion: string } | null } = {
@@ -160,6 +192,9 @@ export function GameScreen({ initial }: { initial: GameState }) {
               case "event":
                 push({ kind: "event", text: e.text });
                 notify(e.text);
+                break;
+              case "segment":
+                push(e.segment);
                 break;
               case "reinterpreted":
                 setLive((l) => (l ? { ...l, player: e.text, original: action.type === "free" ? action.text : undefined, reason: e.reason } : l));
@@ -290,24 +325,17 @@ export function GameScreen({ initial }: { initial: GameState }) {
               {dayLabel && ` · ${dayLabel}`} · {dateLabel} · {w.location}
             </p>
           </div>
-          <SettingsMenu settings={state.settings} onChange={updateSettings} disabled={busy} />
+          {w.phase !== "dossier" && <Hud state={state} onClick={toggleSheet} />}
+          <SettingsMenu settings={state.settings} onChange={updateSettings} disabled={busy} onExport={() => exportSave(state)} />
           <ThemeToggle />
-          <Link href="/codex" target="_blank" className="hidden text-[11px] tracking-[0.15em] text-muted uppercase hover:text-ivory sm:block">
-            Codex
-          </Link>
           <button
-            onClick={() => exportSave(state)}
-            className="hidden text-[11px] tracking-[0.15em] text-muted uppercase hover:text-ivory sm:block"
-            title="Télécharger la sauvegarde"
-          >
-            Exporter
-          </button>
-          <button
-            onClick={() => setSheetOpen((o) => !o)}
-            className="flex items-center gap-2 rounded-sm border border-line px-2.5 py-1.5 text-xs hover:border-brass lg:hidden"
+            onClick={toggleSheet}
+            title="Afficher ou ranger ta fiche"
+            className={`flex items-center gap-2 rounded-sm border px-2.5 py-1.5 text-xs transition-colors hover:border-brass ${sheetPinned ? "lg:border-brass/50 lg:bg-brass/10" : ""} border-line`}
           >
             <RankBadge rank={c.rank} className="h-5 w-4" />
-            Fiche
+            <span className="hidden sm:inline">Fiche</span>
+            {c.skillPoints > 0 && <span className="rounded-full bg-brass px-1.5 text-[9px] text-ink">{c.skillPoints}</span>}
           </button>
         </div>
       </header>
@@ -316,18 +344,39 @@ export function GameScreen({ initial }: { initial: GameState }) {
         <main className="flex min-w-0 flex-1 flex-col">
           <MainTabs state={state} tab={tab} setTab={setTab} />
           {tab !== "recit" ? (
-            <div className={`min-h-0 flex-1 ${tab === "carte" ? "" : "scrollbar-thin overflow-y-auto"}`}>
-              {tab === "carte" ? (
-                <WorldMap state={state} />
-              ) : (
-                <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                  {tab === "semaine" && (
-                    <WeekPlanner state={state} plan={plan} setPlan={setPlan} busy={busy} onPlay={state.world.phase === "base" ? () => play({ type: "week", plan }) : undefined} />
+            <div className={`min-h-0 flex-1 ${tab === "monde" && worldView === "carte" ? "flex flex-col" : "scrollbar-thin overflow-y-auto"}`}>
+              {tab === "monde" && (
+                <>
+                  <SubTabs value={worldView} onChange={setWorldView} options={[["carte", "Carte"], ["renseignement", "Renseignement"]]} />
+                  {worldView === "carte" ? (
+                    <div className="min-h-0 flex-1">
+                      <WorldMap state={state} />
+                    </div>
+                  ) : (
+                    <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+                      <IntelBoard state={state} />
+                    </div>
                   )}
-                  {tab === "operations" && <OpsBoard state={state} busy={busy} onChange={commit} onAction={(a) => play(a)} />}
-                  {tab === "equipe" && <TeamPanel state={state} onChange={busy ? undefined : commit} />}
-                  {tab === "commandement" && <CommandPanel state={state} onChange={busy ? undefined : commit} />}
+                </>
+              )}
+              {tab === "qg" && (
+                <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+                  <HQ state={state} plan={plan} setPlan={setPlan} busy={busy} onAction={(a) => play(a)} onChange={busy ? undefined : commit} onBackToStory={() => setTab("recit")} />
                 </div>
+              )}
+              {tab === "agence" && (
+                <>
+                  {RANKS[c.rank].order >= RANKS.agent.order && (
+                    <SubTabs value={agencyView} onChange={setAgencyView} options={[["effectif", "Effectif et Cercles"], ["commandement", "Ce que tu diriges"]]} />
+                  )}
+                  <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+                    {agencyView === "commandement" && RANKS[c.rank].order >= RANKS.agent.order ? (
+                      <CommandPanel state={state} onChange={busy ? undefined : commit} />
+                    ) : (
+                      <TeamPanel state={state} onChange={busy ? undefined : commit} />
+                    )}
+                  </div>
+                </>
               )}
             </div>
           ) : (
@@ -493,7 +542,8 @@ export function GameScreen({ initial }: { initial: GameState }) {
             plan={plan}
             onPlayWeek={() => play({ type: "week", plan })}
             onAction={(a) => play(a)}
-            openTab={setTab}
+            onChange={commit}
+            openTab={(t) => setTab(t)}
           />
           </>
           )}
@@ -502,12 +552,12 @@ export function GameScreen({ initial }: { initial: GameState }) {
         <aside
           className={`absolute inset-y-0 right-0 z-30 w-[22rem] max-w-[90vw] border-l border-line bg-panel shadow-2xl transition-transform lg:static lg:translate-x-0 lg:shadow-none ${
             sheetOpen ? "translate-x-0" : "translate-x-full"
-          }`}
+          } ${sheetPinned ? "" : "lg:hidden"}`}
         >
           <CharacterSheet
             state={state}
             onChange={busy ? undefined : commit}
-            onOpenDivisions={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
+            onOpenPromotion={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
             onAction={
               busy || state.log.length === 0
                 ? undefined
@@ -532,7 +582,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
           />
         )}
 
-        <div className="pointer-events-none absolute top-3 right-3 z-50 flex w-72 flex-col gap-2 lg:right-[23rem]" aria-live="polite">
+        <div className={`pointer-events-none absolute top-3 right-3 z-50 flex w-72 flex-col gap-2 ${sheetPinned ? "lg:right-[23rem]" : ""}`} aria-live="polite">
           {toasts.map((t) => (
             <div
               key={t.id}
@@ -662,22 +712,23 @@ function SettingsMenu({
   settings,
   onChange,
   disabled,
+  onExport,
 }: {
   settings: GameState["settings"];
   onChange: (patch: Partial<GameState["settings"]>) => void;
   disabled: boolean;
+  onExport: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const mode = MODES.find((m) => m.id === settings.narration)?.label;
-  const pace = PACE_OPTIONS.find((p) => p.id === settings.pace)?.label;
   return (
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="rounded-sm border border-line px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.14em] text-muted uppercase hover:border-brass hover:text-ivory"
+        title="Réglages, codex, sauvegarde"
+        className="rounded-sm border border-line px-2.5 py-1.5 text-[11px] text-muted hover:border-brass hover:text-ivory"
       >
-        ⚙ <span className="hidden sm:inline">{mode} · {pace}</span>
+        ⚙
       </button>
       {open && (
         <>
@@ -685,9 +736,71 @@ function SettingsMenu({
           <div className="absolute right-0 z-50 mt-2 w-72 space-y-4 rounded-sm border border-line-strong bg-panel p-4 shadow-2xl">
             <Segmented label="Narration" value={settings.narration} options={MODES} onChange={(narration) => onChange({ narration })} disabled={disabled} />
             <Segmented label="Rythme" value={settings.pace} options={PACE_OPTIONS} onChange={(pace) => onChange({ pace })} disabled={disabled} />
+            <div className="flex justify-between border-t border-line pt-3 text-[11px] tracking-[0.15em] uppercase">
+              <Link href="/codex" target="_blank" className="text-muted hover:text-ivory">
+                Codex ↗
+              </Link>
+              <button onClick={onExport} className="text-muted uppercase hover:text-ivory">
+                Exporter la partie
+              </button>
+            </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** L'état du personnage d'un coup d'œil, dans l'en-tête. */
+function Hud({ state, onClick }: { state: GameState; onClick: () => void }) {
+  const c = state.character;
+  const upkeep = weeklyUpkeep(state);
+  const items = [
+    { label: "Santé", value: c.health, max: c.healthMax, color: c.health <= c.healthMax / 3 ? "var(--color-fail)" : "var(--pole-corps)" },
+    { label: "Moral", value: c.morale, max: c.moraleMax, color: "var(--pole-ame)" },
+    { label: "Fatigue", value: c.fatigue, max: 100, color: c.fatigue >= 60 ? "var(--color-fail)" : "var(--color-partial)" },
+  ];
+  return (
+    <button onClick={onClick} className="hidden items-center gap-4 rounded-sm px-2 py-1 hover:bg-ivory/5 md:flex" title="Ouvrir ta fiche">
+      {items.map((i) => (
+        <span key={i.label} className="w-16 text-left">
+          <span className="flex justify-between text-[9px] tracking-[0.15em] text-faint uppercase">
+            {i.label}
+            <span className="font-mono text-ivory/80">{i.value}</span>
+          </span>
+          <span className="mt-1 block h-1 overflow-hidden rounded-full bg-line">
+            <span className="block h-full rounded-full transition-all duration-700" style={{ width: `${(i.value / i.max) * 100}%`, background: i.color }} />
+          </span>
+        </span>
+      ))}
+      <span className="text-left">
+        <span className="block text-[9px] tracking-[0.15em] text-faint uppercase">Solde</span>
+        <span className="font-mono text-xs text-success" title={upkeep ? `Entretien ${formatEuros(upkeep)}/semaine` : undefined}>
+          {formatEuros(c.money)}
+        </span>
+      </span>
+      {(c.injuries?.length ?? 0) > 0 && (
+        <span className="text-[10px] text-fail" title={c.injuries.map((i) => i.name).join(", ")}>
+          ✚ {c.injuries.length}
+        </span>
+      )}
+      {c.prison && <span className="text-[10px] font-semibold tracking-[0.15em] text-fail uppercase">Détenu</span>}
+    </button>
+  );
+}
+
+function SubTabs<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: [T, string][] }) {
+  return (
+    <div className="flex shrink-0 justify-center gap-1 border-b border-line bg-night/40 px-3 py-1.5">
+      {options.map(([id, label]) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className={`rounded-sm px-3 py-1 text-[11px] tracking-[0.1em] transition-colors ${value === id ? "bg-brass/15 text-brass-soft" : "text-muted hover:text-ivory"}`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -729,6 +842,18 @@ function NarratorBlock({
             </div>
           );
         if (g.kind === "check") return <DiceCard key={i} check={g.check} animate={animate} />;
+        if (g.kind === "card")
+          return (
+            <div key={i} className="text-base leading-normal">
+              <StoryCardView card={g.card} animate={animate} />
+            </div>
+          );
+        if (g.kind === "doc")
+          return (
+            <div key={i} className="text-base leading-normal">
+              <StoryDocView doc={g.doc} animate={animate} />
+            </div>
+          );
         if (g.kind === "events")
           return (
             <div key={i} className="animate-rise my-4 flex flex-wrap gap-2 font-sans">
@@ -748,13 +873,15 @@ function NarratorBlock({
 function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setTab: (t: MainTab) => void }) {
   const c = state.character;
   const started = state.world.phase !== "dossier";
-  const tabs: { id: MainTab; label: string; badge?: number }[] = [
-    { id: "recit", label: "Récit" },
-    ...(state.world.phase === "base" ? [{ id: "semaine" as const, label: c.rank === "aspirant" ? "Académie" : "Semaine", badge: state.duties.filter((d) => d.status === "ouvert").length }] : []),
-    ...(c.rank !== "prospect" ? [{ id: "operations" as const, label: "Opérations", badge: state.offers.length }] : []),
-    { id: "carte", label: "Carte" },
-    { id: "equipe", label: "Équipe" },
-    ...(RANKS[c.rank].order >= RANKS.agent.order ? [{ id: "commandement" as const, label: "Commandement" }] : []),
+  const urgent = state.world.geo.threats.filter((t) => t.known && (t.capstone || t.progress >= 75)).length;
+  const hqLabel = state.mission ? "Mission" : c.prison ? "Cellule" : c.rank === "aspirant" ? "Académie" : "QG";
+  const tabs: { id: MainTab; label: string; badge?: number; hint: string }[] = [
+    { id: "recit", label: "Récit", hint: "L'histoire, tes choix" },
+    ...(state.world.phase === "base" || state.mission
+      ? [{ id: "qg" as const, label: hqLabel, badge: state.offers.length + state.duties.filter((d) => d.status === "ouvert" && d.dueDay - state.world.day <= 7).length, hint: "Ta semaine, les missions, tes obligations" }]
+      : []),
+    { id: "monde", label: "Monde", badge: c.rank !== "prospect" ? urgent : 0, hint: "Carte et renseignement" },
+    { id: "agence", label: "Agence", hint: "Le Cercle, l'effectif, ce que tu diriges" },
   ];
   if (!started) return null;
   return (
@@ -763,7 +890,8 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
         <button
           key={t.id}
           onClick={() => setTab(t.id)}
-          className={`relative px-3 py-2.5 text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap uppercase transition-colors ${
+          title={t.hint}
+          className={`relative px-4 py-2.5 text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap uppercase transition-colors ${
             tab === t.id ? "text-brass-soft" : "text-muted hover:text-ivory"
           }`}
         >
@@ -776,47 +904,40 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
   );
 }
 
-/** À la base : la semaine prévue, la mission qui attend, et l'accès au planning. */
-function BaseBar({
-  state,
-  plan,
-  onPlayWeek,
-  openTab,
-  hasChoices,
-}: {
-  state: GameState;
-  plan: ActivityChoice[];
-  onPlayWeek: () => void;
-  openTab: (t: MainTab) => void;
-  hasChoices: boolean;
-}) {
+/** À la base, entre deux scènes : les deux décisions possibles, côte à côte. */
+function BaseDock({ state, plan, onPlayWeek, openTab }: { state: GameState; plan: ActivityChoice[]; onPlayWeek: () => void; openTab: (t: MainTab) => void }) {
   const error = planError(state, plan);
-  const canGo = state.offers.length > 0 && !canStartMission(state);
+  const offer = state.offers[0];
+  const canGo = Boolean(offer) && !canStartMission(state);
   return (
-    <div className="mb-3 space-y-2">
-      {canGo && (
-        <button onClick={() => openTab("operations")} className="flex w-full items-center gap-3 rounded-sm border border-fail/40 bg-fail/[0.07] px-3 py-2 text-left text-sm hover:border-fail/70">
-          <span className="text-fail">⌖</span>
-          <span className="flex-1">
-            {state.offers[0].assigned ? "Mission assignée" : `${state.offers.length} mission${state.offers.length > 1 ? "s" : ""} au tableau`} :{" "}
-            <span className="font-serif">{state.offers[0].title.split(" — ")[0]}</span>
-          </span>
-          <span className="text-[11px] tracking-[0.12em] text-fail uppercase">Préparer</span>
-        </button>
-      )}
-      <div className="flex flex-wrap items-center gap-2 rounded-sm border border-line bg-panel/50 px-3 py-2">
-        <span className="label">{hasChoices ? "Ou passer à la semaine :" : "Cette semaine :"}</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-ivory/85">
-          {plan.map((p) => `${ACTIVITIES[p.activity].icon} ${ACTIVITIES[p.activity].label}`).join(" · ")}
-        </span>
-        <button onClick={() => openTab("semaine")} className="text-[11px] tracking-[0.12em] text-muted uppercase hover:text-ivory">
-          Modifier
-        </button>
-        <button onClick={onPlayWeek} disabled={Boolean(error)} title={error ?? ""} className="btn btn-primary px-4 py-1.5">
+    <div className={`mb-3 grid gap-2 ${canGo ? "sm:grid-cols-2" : ""}`}>
+      <div className="flex flex-col justify-between gap-2 rounded-sm border border-line bg-panel/60 p-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="label">{state.character.prison ? "En cellule" : "Cette semaine"}</span>
+          <button onClick={() => openTab("qg")} className="text-[10px] tracking-[0.15em] text-muted uppercase hover:text-ivory">
+            Planifier
+          </button>
+        </div>
+        <p className="flex flex-wrap gap-1.5">
+          {plan.map((p, i) => (
+            <span key={i} className="rounded-sm border border-line px-1.5 py-0.5 text-[11px] text-ivory/85">
+              <span className="text-brass">{ACTIVITIES[p.activity].icon}</span> {ACTIVITIES[p.activity].label}
+            </span>
+          ))}
+        </p>
+        {error && <p className="text-[11px] text-fail">{error}</p>}
+        <button onClick={onPlayWeek} disabled={Boolean(error)} title={error ?? ""} className="btn btn-primary py-2">
           Jouer la semaine ▸
         </button>
       </div>
-      {error && <p className="text-[11px] text-fail">{error}</p>}
+      {canGo && (
+        <button onClick={() => openTab("qg")} className="group flex flex-col justify-between gap-2 rounded-sm border border-fail/40 bg-fail/[0.06] p-3 text-left transition-colors hover:border-fail/70">
+          <span className="label text-fail">{offer.assigned ? "Mission assignée" : `${state.offers.length} mission${state.offers.length > 1 ? "s" : ""} au tableau`}</span>
+          <span className="font-serif text-xl leading-tight">{offer.title.split(" — ")[0]}</span>
+          <span className="line-clamp-2 text-xs text-muted">{offer.summary}</span>
+          <span className="text-[11px] font-semibold tracking-[0.15em] text-fail uppercase group-hover:underline">Préparer le départ ▸</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -834,6 +955,7 @@ function Composer({
   plan,
   onPlayWeek,
   onAction,
+  onChange,
   openTab,
 }: {
   state: GameState;
@@ -848,35 +970,59 @@ function Composer({
   plan: ActivityChoice[];
   onPlayWeek: () => void;
   onAction: (a: PlayerAction) => void;
+  onChange: (s: GameState) => void;
   openTab: (t: MainTab) => void;
 }) {
-  if (state.log.length === 0 && !busy) return null;
   const phase = state.world.phase;
+  const atBase = phase === "base" && !state.mission;
+  const choices = busy ? [] : state.choices;
+  const [writing, setWriting] = useState(false);
+  const pick = (i: number) => {
+    const choice = choices[i];
+    if (choice) onChoice(choice.skill ? `[${SKILLS[choice.skill].label}] ${choice.label}` : choice.label);
+  };
+  // Raccourcis : 1 à 4 pour les choix du narrateur (hors saisie).
+  useEffect(() => {
+    if (!choices.length || (phase === "mission" && state.mission)) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      const n = Number(e.key);
+      if (n >= 1 && n <= choices.length) pick(n - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  if (state.log.length === 0 && !busy) return null;
   // En mission : la console du moteur remplace les choix du narrateur.
   if (phase === "mission" && state.mission && !busy)
     return (
-      <div className="shrink-0 border-t border-line bg-night/95">
+      <div className="scrollbar-thin max-h-[58vh] shrink-0 overflow-y-auto border-t border-line bg-night/95">
         <div className="mx-auto max-w-[56rem] px-5 py-4 sm:px-8">
-          <MissionConsole state={state} busy={busy} onAction={onAction} />
+          <MissionConsole state={state} busy={busy} onAction={onAction} onChange={onChange} />
         </div>
       </div>
     );
-  const atBase = phase === "base" && !state.mission;
+  // À la base sans scène en cours, on décide de la suite ; l'action libre reste à portée de main.
+  const showInput = busy || !atBase || choices.length > 0 || writing || draft.length > 0;
+  // Sur téléphone, quand le narrateur propose des choix, la saisie libre se replie derrière un lien.
+  const foldOnPhone = choices.length > 0 && !writing && !draft && !busy;
   return (
     <div className="shrink-0 border-t border-line bg-night/95">
       <div className="mx-auto max-w-[44rem] px-5 py-4 sm:px-8">
-        {atBase && !busy && <BaseBar state={state} plan={plan} onPlayWeek={onPlayWeek} openTab={openTab} hasChoices={state.choices.length > 0} />}
         {storageWarning && (
           <p className="mb-2 text-xs text-fail">
             Sauvegarde impossible : stockage du navigateur plein. Exporte ta partie pour ne rien perdre.
           </p>
         )}
-        {!busy && state.choices.length > 0 && (
+        {atBase && !busy && choices.length === 0 && <BaseDock state={state} plan={plan} onPlayWeek={onPlayWeek} openTab={openTab} />}
+        {choices.length > 0 && (
           <ul className="mb-3 grid gap-2 sm:grid-cols-2">
-            {state.choices.map((choice, i) => (
+            {choices.map((choice, i) => (
               <li key={i}>
                 <button
-                  onClick={() => onChoice(choice.skill ? `[${SKILLS[choice.skill].label}] ${choice.label}` : choice.label)}
+                  onClick={() => pick(i)}
                   className="group flex h-full w-full items-start gap-3 rounded-sm border border-line bg-panel/60 px-3 py-2.5 text-left text-sm transition-all hover:border-brass/60 hover:bg-panel"
                 >
                   {choice.skill ? (
@@ -886,67 +1032,74 @@ function Composer({
                   )}
                   <span className="flex-1">
                     {choice.skill && (
-                      <span
-                        className="mr-1.5 text-[10px] font-bold tracking-[0.18em] uppercase"
-                        style={{ color: ATTRIBUTES[SKILLS[choice.skill].attribute].color }}
-                      >
+                      <span className="mr-1.5 text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: ATTRIBUTES[SKILLS[choice.skill].attribute].color }}>
                         [{SKILLS[choice.skill].label}]
                       </span>
                     )}
                     {choice.label}
-                    <span className={`ml-2 text-[10px] tracking-[0.15em] uppercase opacity-60 ${TONE_STYLE[choice.tone]}`}>
-                      {CHOICE_TONES[choice.tone].label}
-                    </span>
+                    <span className={`ml-2 text-[10px] tracking-[0.15em] uppercase opacity-60 ${TONE_STYLE[choice.tone]}`}>{CHOICE_TONES[choice.tone].label}</span>
                   </span>
+                  <kbd className="hidden shrink-0 font-mono text-[10px] text-faint sm:inline">{i + 1}</kbd>
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit();
-          }}
-          className="flex items-end gap-2"
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                onSubmit();
-              }
-            }}
-            disabled={busy}
-            rows={1}
-            maxLength={1500}
-            placeholder={busy ? "Le narrateur écrit…" : "Ou décris ton action, tes paroles…  ((hors-jeu entre doubles parenthèses))"}
-            className="field max-h-40 min-h-[44px] flex-1 resize-none font-serif text-base"
-          />
-          {busy ? (
-            <button type="button" onClick={onStop} className="btn btn-ghost h-[44px]">
-              Stop
+        {atBase && !busy && choices.length > 0 && (
+          <p className="mb-2 text-right text-[11px] text-faint">
+            Ou laisser filer :{" "}
+            <button onClick={() => openTab("qg")} className="tracking-[0.12em] text-muted uppercase hover:text-ivory">
+              passer à la semaine ▸
             </button>
-          ) : (
-            <>
-              {!atBase && (
-                <button
-                  type="button"
-                  onClick={onAdvance}
-                  title="Conclure la scène et passer au prochain moment important"
-                  className="btn btn-ghost h-[44px] px-3"
-                >
-                  ⏭<span className="hidden sm:inline">Avancer</span>
-                </button>
-              )}
-              <button type="submit" disabled={!draft.trim()} className="btn btn-primary h-[44px]">
-                Agir
+          </p>
+        )}
+        {showInput ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSubmit();
+            }}
+            className={`items-end gap-2 ${foldOnPhone ? "hidden sm:flex" : "flex"}`}
+          >
+            <textarea
+              value={draft}
+              autoFocus={writing}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSubmit();
+                }
+              }}
+              disabled={busy}
+              rows={1}
+              maxLength={1500}
+              placeholder={busy ? "Le narrateur écrit…" : "Ou décris ton action, tes paroles…  ((hors-jeu entre doubles parenthèses))"}
+              className="field max-h-40 min-h-[44px] flex-1 resize-none font-serif text-base"
+            />
+            {busy ? (
+              <button type="button" onClick={onStop} className="btn btn-ghost h-[44px]">
+                Stop
               </button>
-            </>
-          )}
-        </form>
+            ) : (
+              <>
+                {!atBase && (
+                  <button type="button" onClick={onAdvance} title="Conclure la scène et passer au prochain moment important" className="btn btn-ghost h-[44px] px-3">
+                    ⏭<span className="hidden sm:inline">Avancer</span>
+                  </button>
+                )}
+                <button type="submit" disabled={!draft.trim()} className="btn btn-primary h-[44px]">
+                  Agir
+                </button>
+              </>
+            )}
+          </form>
+        ) : null}
+        {(!showInput || foldOnPhone) && (
+          <button onClick={() => setWriting(true)} className={`text-[10px] tracking-[0.15em] text-muted uppercase hover:text-ivory ${showInput ? "sm:hidden" : ""}`}>
+            ✎ Faire autre chose (action libre)
+          </button>
+        )}
       </div>
     </div>
   );

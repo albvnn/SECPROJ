@@ -190,6 +190,25 @@ export const ChoicesInput = z.object({
     ),
 });
 
+export const PieceInput = z.object({
+  type: z
+    .enum(["message", "lettre", "presse", "chiffre", "photo"])
+    .describe("message : SMS ou messagerie (remplis « messages ») ; lettre : lettre, note, extrait de dossier ; presse : coupure de journal ou dépêche ; chiffre : message codé que le joueur déchiffre ; photo : un cliché décrit, avec sa légende au dos."),
+  titre: z.string().min(1).max(80).describe("Titre court : objet du message, gros titre du journal, nom du document, ce que montre la photo."),
+  de: z.string().max(80).optional().describe("Expéditeur, journal, service ou auteur (tel qu'il apparaît sur la pièce)."),
+  date: z.string().max(40).optional().describe("Date ou heure telle qu'elle apparaît sur la pièce."),
+  contenu: z
+    .string()
+    .max(900)
+    .describe("Le texte de la pièce, mot pour mot (vide pour une conversation). Pour une photo : ce qu'on voit, décrit sobrement. Un ou deux détails révélateurs entre ||doubles barres||."),
+  messages: z
+    .array(z.object({ de: z.string().max(40), texte: z.string().max(300) }))
+    .max(8)
+    .optional()
+    .describe("Pour « message » : la conversation, dans l'ordre. « moi » pour les messages du personnage."),
+  legende: z.string().max(140).optional().describe("Pour une photo : ce qui est écrit au dos."),
+});
+
 export const ArbitrateInput = z.object({
   verdict: z
     .enum(["recevable", "reformulee", "refusee"])
@@ -257,6 +276,7 @@ export const TOOL_CHECK = "jet_de_competence";
 export const TOOL_UPDATE = "maj_etat";
 export const TOOL_CHOICES = "proposer_choix";
 export const TOOL_DOSSIER = "clore_dossier";
+export const TOOL_PIECE = "montrer_piece";
 
 export const GAME_TOOLS: Anthropic.Tool[] = [
   tool(
@@ -278,6 +298,11 @@ export const GAME_TOOLS: Anthropic.Tool[] = [
     TOOL_UPDATE,
     "Enregistre les changements d'état du jeu (santé, moral, temps, lieu, relations, objets, carnet, phase, rang…). Seuls les champs fournis sont modifiés. Le moteur renvoie ce qui a été appliqué ou refusé.",
     UpdateInput,
+  ),
+  tool(
+    TOOL_PIECE,
+    "Montre au joueur une pièce que son personnage lit (message, lettre, coupure de presse, message chiffré, photo). Elle s'affiche dans le récit et rejoint son carnet. Au plus une par tour, seulement quand la lire compte.",
+    PieceInput,
   ),
   tool(
     TOOL_CHOICES,

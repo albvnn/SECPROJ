@@ -146,7 +146,7 @@ export default function Home() {
           {[
             ["I. Le dossier", "Choisis ton agence et ton pays, crée ton personnage. Quelqu'un t'observe depuis des mois et a reconstitué ta vie."],
             ["II. La Sélection", "Cent jours dans un programme qui n'est pas ce qu'il prétend. À peine un sur dix est retenu, et apprend enfin la vérité."],
-            ["III. Le Brevet", "Un nom de code, une Division, et les missions : des opérations à travers le monde, chacune une histoire complète."],
+            ["III. Le Brevet", "Un matricule, une Station, et les missions à travers le monde. Puis, un jour, un siège au Cercle et son nom de code."],
           ].map(([title, text]) => (
             <div key={title}>
               <h2 className="font-serif text-xl text-brass-soft">{title}</h2>

@@ -1,10 +1,10 @@
 import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { applyUpdate, performCheck, randomId, recordProgress, resourceAvailable } from "@/lib/game/engine";
-import { OUTCOMES, SKILLS, actionLabel } from "@/lib/game/rules";
+import { OUTCOMES, SKILLS, actionLabel, progressKind } from "@/lib/game/rules";
 import { describeAction, engineNodeStep, isEngineAction, resolveFreeAttempt, runEngineAction, type EngineStep } from "@/lib/game/actions";
 import { currentNode } from "@/lib/game/missions";
-import type { Choice, GameState, LogEntry, PlayerAction, Segment, Usage } from "@/lib/game/types";
+import type { Choice, GameState, LogEntry, PlayerAction, Segment, StoryCard, StoryDoc, Usage } from "@/lib/game/types";
 import {
   complete,
   contextBlocks,
@@ -23,7 +23,9 @@ import {
   ChoicesInput,
   GAME_TOOLS,
   NarrateInput,
+  PieceInput,
   TOOL_ARBITRATE,
+  TOOL_PIECE,
   TOOL_NARRATE,
   TOOL_CHECK,
   TOOL_CHOICES,
@@ -87,6 +89,17 @@ export class SegmentBuffer {
   narration(delta: string, blockStart: boolean) {
     const last = this.segments.at(-1);
     this.text(blockStart && last?.kind === "text" && last.text.trim() ? `\n\n${delta}` : delta);
+  }
+  /** Carte du jeu ou pièce du narrateur. */
+  card(card: StoryCard) {
+    const segment = { kind: "card" as const, card };
+    this.segments.push(segment);
+    this.emit({ type: "segment", segment });
+  }
+  doc(doc: StoryDoc) {
+    const segment = { kind: "doc" as const, doc };
+    this.segments.push(segment);
+    this.emit({ type: "segment", segment });
   }
   events(texts: string[]) {
     for (const text of texts) {
@@ -207,12 +220,21 @@ export async function runTurn(
   emit({ type: "status", text: action.type === "free" ? "Le narrateur examine ton action…" : "Le narrateur prend la plume…" });
   if (action.type === "contact") emit({ type: "status", text: `Tu contactes ${action.name}…` });
   const buffer = new SegmentBuffer(emit);
+  // La carte de l'action (ordre de mission, bilan…) précède le jet et le récit ; le débriefing vient après le jet.
+  const [firstCard, ...laterCards] = engine?.cards ?? [];
+  if (firstCard && firstCard.type !== "etape") buffer.card(firstCard);
   for (const check of engine?.checks ?? []) {
     buffer.segments.push({ kind: "check", check });
     emit({ type: "check", check });
   }
-  if (engine && action.type !== "week") buffer.events(engine.notices);
-  else if (engine) buffer.events(engine.notices.filter((n) => !/^Solde|^Anniversaire/.test(n)).slice(0, 8));
+  if (firstCard?.type === "etape") buffer.card(firstCard);
+  for (const card of laterCards) buffer.card(card);
+  // Les cartes résument déjà l'essentiel : restent en étiquettes les progrès (ils déclenchent les notifications)
+  // et les nouvelles que les cartes ne montrent pas.
+  const keep = (re: RegExp) => (n: string) => Boolean(progressKind(n)) || re.test(n);
+  if (engine && action.type !== "week") buffer.events(engine.cards.length ? engine.notices.filter(keep(/^Nouvelle|^Blessure|^Séquelle|^Légende|^Tu es/)) : engine.notices);
+  else if (engine) buffer.events(engine.notices.filter(keep(/^Nouvelle|^Informateur|^Impayé|^Coup de|se manifeste|^Personne|déjoué/)).slice(0, 8));
+  let pieceShown = false;
   let choices: Choice[] = [];
   let rejection: { reason: string; suggestion: string } | null = null;
   let sceneOpened = false;
@@ -283,9 +305,9 @@ export async function runTurn(
         if (action.type === "node_free" && state.mission?.stage === "terrain") {
           freeResolved = true;
           const node = currentNode(state.mission)!;
-          const step = engineNodeStep(state, resolveFreeAttempt(state, req.motif, k.outcome), node.title, "");
+          const step = engineNodeStep(state, resolveFreeAttempt(state, req.motif, k.outcome), node.title, "", req.motif);
           state = recordProgress(step.state, step.notices);
-          buffer.events(step.notices);
+          for (const card of step.cards) buffer.card(card);
           missionNote = `\nConséquences dans la mission (décidées par le jeu) :\n${step.facts}`;
         }
         return {
@@ -329,6 +351,26 @@ export async function runTurn(
             .filter(Boolean)
             .join("\n"),
         };
+      }
+      case TOOL_PIECE: {
+        const parsed = PieceInput.safeParse(input);
+        if (!parsed.success) return invalidInput(parsed.error);
+        if (pieceShown) return { isError: true, content: "Une seule pièce par tour : continue le récit." };
+        pieceShown = true;
+        const p = parsed.data;
+        const doc: StoryDoc = {
+          type: p.type,
+          titre: p.titre,
+          contenu: p.contenu,
+          ...(p.de ? { de: p.de } : {}),
+          ...(p.date ? { date: p.date } : {}),
+          ...(p.messages?.length ? { messages: p.messages } : {}),
+          ...(p.legende ? { legende: p.legende } : {}),
+          day: state.world.day,
+        };
+        buffer.doc(doc);
+        state = { ...state, pieces: [...(state.pieces ?? []), doc].slice(-30) };
+        return { content: "Pièce affichée au joueur et rangée dans son carnet. Ne recopie pas son contenu : fais réagir le personnage." };
       }
       case TOOL_CHOICES: {
         const parsed = ChoicesInput.safeParse(input);

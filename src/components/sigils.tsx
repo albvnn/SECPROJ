@@ -170,11 +170,18 @@ export function SeatSigil({ agency, seat, number, className = "h-16 w-16" }: { a
   );
 }
 
-export function DivisionSigil({ agency, division, className = "h-16 w-16" }: { agency: AgencyId; division: string; className?: string }) {
+/** Emblème d'une Branche de soutien (laboratoire, analyse, logistique). */
+const BRANCH_MOTIF: Record<string, string> = {
+  forge: "hephaistos", bibliotheque: "mnemosyne", passeurs: "maree",
+  hangar: "hephaistos", mission_control: "signal", ground_crew: "flight",
+  atelier: "hephaistos", ruche: "signal", marees: "maree",
+};
+
+export function BranchSigil({ agency, branch, className = "h-16 w-16" }: { agency: AgencyId; branch: string; className?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={className} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden>
       <Frame agency={agency} />
-      {MOTIFS[division] ?? <circle cx="32" cy="32" r="6" />}
+      {MOTIFS[BRANCH_MOTIF[branch] ?? ""] ?? <circle cx="32" cy="32" r="6" />}
     </svg>
   );
 }
