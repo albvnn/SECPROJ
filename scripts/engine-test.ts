@@ -1,6 +1,7 @@
 /** Tests hors-ligne du moteur v4. `npx tsx scripts/engine-test.ts` */
-import { applyUpdate, createGameState, freeSeats, normalizeState, parseLanguages, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
-import { resolveWeek, defaultPlan, planError } from "../src/lib/game/planner";
+import { applyUpdate, createGameState, currentAge, currentDate, freeSeats, normalizeState, parseLanguages, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
+import { resolveWeek, resolvePeriod, foldLines, defaultPlan, planError } from "../src/lib/game/planner";
+import { addDays } from "../src/lib/game/calendar";
 import { canStartMission, chooseRoute, currentNode, makeOffer, missionAllowance, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
 import { resolveNode, runEngineAction } from "../src/lib/game/actions";
 import { buyModule, delegateOffer, openStation, setSquad } from "../src/lib/game/command";
@@ -307,6 +308,28 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   check("langues : le mandarin aide en Chine", languageBonus({ ...s.character, spoken }, "156") === 1);
   const old = normalizeState({ ...s, character: { ...s.character, spoken: ["mandarin", "English"] } } as GameState);
   check("langues : les anciennes sauvegardes sont corrigées", old.character.spoken.includes("chinois") && old.character.spoken.includes("anglais"));
+}
+
+// Le rythme : plusieurs semaines d'affilée, avec des arrêts sur ce qui compte.
+{
+  const base = { ...s, character: { ...s.character, prison: null, injuries: [], fatigue: 0, health: s.character.healthMax }, duties: [], world: { ...s.world, restUntil: s.world.day } };
+  const plan = [{ activity: "repos" as const }, { activity: "loisirs" as const }, { activity: "repos" as const }];
+  const month = resolvePeriod(base, plan, 4, rng);
+  check("rythme : jusqu'à quatre semaines d'un coup", month.weeks >= 1 && month.weeks <= 4 && month.state.world.day === base.world.day + 7 * month.weeks, `${month.weeks} sem.${month.stop ? `, arrêt : ${month.stop}` : ""}`);
+  check("rythme : les lignes répétées sont regroupées", foldLines(["Repos.", "Repos.", "Autre."]).join("|") === "Repos (×2).|Autre.");
+  // Un anniversaire dans dix jours : le temps s'arrête dessus.
+  const today = currentDate(base);
+  const age = currentAge(base);
+  const birth = `${Number(today.slice(0, 4)) - age - 1}${addDays(today, 10).slice(4)}`;
+  const bday = { ...base, character: { ...base.character, identity: { ...base.character.identity, birthDate: birth } } };
+  const auto = resolvePeriod(bday, plan, "auto", rng);
+  // Soit l'anniversaire tombe (et arrête le temps), soit quelque chose de plus important l'a arrêté avant.
+  const crossed = auto.state.world.day - bday.world.day >= 10;
+  check(
+    "rythme : l'anniversaire arrête le temps et se fête",
+    crossed ? auto.birthday?.age === currentAge(bday) + 1 && auto.weeks <= 2 : Boolean(auto.stop) && !auto.birthday,
+    `${auto.weeks} sem. · ${auto.stop}`,
+  );
 }
 
 // Migration d'une sauvegarde v3.

@@ -30,7 +30,7 @@ function targetLabel(state: GameState, p: ActivityChoice): string | undefined {
 }
 
 /** Le bilan d'une semaine jouée : les trois créneaux, ce qui a bougé, et le détail. */
-export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean): StoryCard {
+export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean, weeks = 1, stop: string | null = null): StoryCard {
   const a = before.character;
   const b = after.character;
   const deltas: { label: string; value: number; unit?: string; good: boolean }[] = [];
@@ -57,7 +57,15 @@ export function weekCard(before: GameState, after: GameState, plan: ActivityChoi
     deltas,
     lines,
     event,
+    weeks,
+    stop,
   };
+}
+
+/** L'anniversaire : un moment à part. */
+export function birthdayCard(state: GameState, age: number, date: string): StoryCard {
+  const c = state.character;
+  return { type: "anniversaire", name: c.codename ? `« ${c.codename} »` : c.identity.firstName, age, dateLabel: formatDate(date) };
 }
 
 /** L'ordre de mission, au départ. */
@@ -150,7 +158,9 @@ export function promotionCard(state: GameState, rank: RankId, notices: string[])
 export function cardToText(card: StoryCard): string {
   switch (card.type) {
     case "semaine":
-      return `[Semaine jouée : ${card.plan.map((p) => p.label).join(", ")}]`;
+      return `[${(card.weeks ?? 1) > 1 ? `${card.weeks} semaines jouées` : "Semaine jouée"} : ${card.plan.map((p) => p.label).join(", ")}${card.stop ? ` — arrêt : ${card.stop}` : ""}]`;
+    case "anniversaire":
+      return `[Anniversaire : ${card.age} ans, le ${card.dateLabel}]`;
     case "briefing":
       return `[Ordre de mission : ${card.name}, ${MISSION_IMPORTANCE[card.importance].label.toLowerCase()}, ${card.city}]`;
     case "etape":

@@ -93,30 +93,64 @@ export function StoryCardView({ card, animate = false }: { card: StoryCard; anim
       return <DebriefCard card={card} animate={animate} />;
     case "promotion":
       return <PromotionCard card={card} animate={animate} />;
+    case "anniversaire":
+      return <BirthdayCard card={card} animate={animate} />;
   }
 }
 
 const DAY_NAMES = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
+/** L'anniversaire : des bougies qui s'allument une à une, puis l'âge. */
+function BirthdayCard({ card, animate }: { card: Extract<StoryCard, { type: "anniversaire" }>; animate: boolean }) {
+  const candles = Math.min(card.age, 21);
+  const lit = useReveal(candles, animate, 70);
+  const accent = "var(--pole-ame)";
+  return (
+    <Shell accent={accent}>
+      <Kicker accent={accent} right={card.dateLabel}>
+        Anniversaire
+      </Kicker>
+      <div className="flex flex-col items-center px-4 pt-4 pb-5 text-center">
+        <div className="flex max-w-xs flex-wrap justify-center gap-1.5" aria-hidden>
+          {Array.from({ length: candles }, (_, i) => (
+            <span key={i} className="flex flex-col items-center">
+              <span className={`h-2 w-1.5 rounded-full transition-opacity duration-300 ${i < lit ? "opacity-100" : "opacity-0"}`} style={{ background: "radial-gradient(circle at 50% 70%, #ffd27a, #f08a24)", boxShadow: i < lit ? "0 0 6px #f0a83a" : "none" }} />
+              <span className="h-4 w-1 rounded-sm" style={{ background: tint(accent, 70) }} />
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 font-serif text-4xl leading-none">{card.age} ans</p>
+        <p className="mt-1 text-xs text-muted">{card.name}, une année de plus — et ce qu'elle ouvre.</p>
+      </div>
+    </Shell>
+  );
+}
+
 function WeekCard({ card, animate }: { card: Extract<StoryCard, { type: "semaine" }>; animate: boolean }) {
-  const days = useReveal(7, animate, 110);
+  const weeks = card.weeks ?? 1;
+  const days = useReveal(weeks > 1 ? weeks : 7, animate, weeks > 1 ? 160 : 110);
   const slots = useReveal(card.plan.length, animate, 260, 900);
   const [open, setOpen] = useState(false);
   const accent = "var(--color-brass)";
   return (
     <Shell accent={accent}>
       <Kicker accent={accent} right={card.dateLabel}>
-        Semaine · jour {card.fromDay} → {card.toDay}
+        {weeks > 1 ? `${weeks} semaines` : "Semaine"} · jour {card.fromDay} → {card.toDay}
       </Kicker>
       <div className="px-4 pt-3 pb-4">
         <div className="flex gap-1" aria-hidden>
-          {DAY_NAMES.map((d, i) => (
+          {(weeks > 1 ? Array.from({ length: weeks }, (_, i) => `S${i + 1}`) : DAY_NAMES).map((d, i) => (
             <div key={d} className="flex-1 text-center">
               <div className="h-1.5 rounded-full transition-colors duration-300" style={{ background: i < days ? accent : "var(--hairline)" }} />
               <span className={`mt-1 block text-[9px] tracking-wider uppercase ${i < days ? "text-muted" : "text-faint/50"}`}>{d}</span>
             </div>
           ))}
         </div>
+        {card.stop && (
+          <p className="mt-2 text-[11px] text-partial">
+            <span className="font-semibold tracking-[0.12em] uppercase">Le temps s'arrête</span> — {card.stop}
+          </p>
+        )}
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {card.plan.map((p, i) => (
             <div
@@ -140,14 +174,20 @@ function WeekCard({ card, animate }: { card: Extract<StoryCard, { type: "semaine
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          {card.lines.length > 0 ? <Toggle open={open} onClick={() => setOpen((o) => !o)} label={`Détail de la semaine (${card.lines.length})`} /> : <span />}
+          {card.lines.length > 0 ? <Toggle open={open} onClick={() => setOpen((o) => !o)} label={`Détail ${weeks > 1 ? "de la période" : "de la semaine"} (${card.lines.filter((l) => !l.startsWith("—")).length})`} /> : <span />}
           {card.event && <span className="text-[10px] font-semibold tracking-[0.15em] text-partial uppercase">Un événement t'attend ↓</span>}
         </div>
         {open && (
           <ul className="animate-rise mt-2 space-y-1 border-t border-line pt-2 text-xs text-muted">
-            {card.lines.map((l, i) => (
-              <li key={i}>· {l}</li>
-            ))}
+            {card.lines.map((l, i) =>
+              l.startsWith("—") ? (
+                <li key={i} className="pt-1 text-[10px] font-semibold tracking-[0.12em] text-faint uppercase">
+                  {l.replace(/—/g, "").trim()}
+                </li>
+              ) : (
+                <li key={i}>· {l}</li>
+              ),
+            )}
           </ul>
         )}
       </div>

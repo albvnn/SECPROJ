@@ -36,6 +36,7 @@ export function HQ({
   const offer = state.offers.find((o) => o.id === preparing) ?? null;
   const atBase = state.world.phase === "base" && !state.mission;
   const prison = state.character.prison;
+  const span = prison ? 1 : (state.settings.span ?? "auto");
   const [showLast, setShowLast] = useState(false);
 
   if (state.mission)
@@ -72,7 +73,15 @@ export function HQ({
       <StatusStrip state={state} />
 
       <div className={`grid gap-8 ${prison ? "" : "lg:grid-cols-[minmax(0,1fr)_22rem]"}`}>
-        <WeekSlots state={state} plan={plan} setPlan={setPlan} busy={busy} onPlay={atBase ? () => onAction({ type: "week", plan }) : undefined} />
+        <WeekSlots
+          state={state}
+          plan={plan}
+          setPlan={setPlan}
+          busy={busy}
+          span={span}
+          onSpan={onChange ? (v) => onChange({ ...state, settings: { ...state.settings, span: v } }) : undefined}
+          onPlay={atBase ? () => onAction({ type: "week", plan, span }) : undefined}
+        />
         {!prison && (
           <section>
             <div className="mb-3 flex items-baseline justify-between">

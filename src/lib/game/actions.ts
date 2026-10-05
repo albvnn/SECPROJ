@@ -16,12 +16,12 @@ import {
   useResource,
   type NodeOutcome,
 } from "./missions";
-import { ACTIVITIES, resolveWeek } from "./planner";
+import { ACTIVITIES, resolvePeriod } from "./planner";
 import { d6, type Rng } from "./rng";
 import { OPERATIVE_TRAITS, operativeSkill, operativeTitle } from "./roster";
 import { DIFFICULTIES, MISSION_IMPORTANCE, MISSION_RESULTS, PARTIAL_MARGIN, RANKS, SKILLS } from "./rules";
 import type { Approach, CheckOutcome, CheckResult, GameState, Mission, PlayerAction, StoryCard } from "./types";
-import { briefingCard, promotionCard, stepCards, weekCard } from "./cards";
+import { birthdayCard, briefingCard, promotionCard, stepCards, weekCard } from "./cards";
 import { cityRegion, findCity, findCountry } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
 
@@ -44,7 +44,7 @@ export interface EngineStep {
 export function describeAction(state: GameState, action: PlayerAction): string | null {
   switch (action.type) {
     case "week":
-      return `▤ Semaine : ${action.plan
+      return `▤ ${action.span === "auto" ? "Jusqu'au prochain événement" : (action.span ?? 1) > 1 ? `${action.span} semaines` : "Semaine"} : ${action.plan
         .map((p) => {
           const def = ACTIVITIES[p.activity];
           const target = p.target ? (SKILLS[p.target as keyof typeof SKILLS]?.label ?? state.relations.find((r) => r.name === p.target)?.name ?? findCity(p.target)?.name ?? state.duties.find((d) => d.id === p.target)?.title ?? AGENCIES[p.target as keyof typeof AGENCIES]?.name) : null;
@@ -179,15 +179,25 @@ export function runEngineAction(state: GameState, action: PlayerAction, roll: ()
   const label = describeAction(state, action) ?? "";
   switch (action.type) {
     case "week": {
-      const r = resolveWeek(state, action.plan, rng);
+      const r = resolvePeriod(state, action.plan, action.span ?? 1, rng);
+      const span = r.weeks > 1 ? `${r.weeks} SEMAINES VIENNENT DE PASSER` : "UNE SEMAINE VIENT DE PASSER";
+      const notices = [...new Set(r.notices)];
       const facts = [
-        `UNE SEMAINE VIENT DE PASSER (jours ${state.world.day} → ${r.state.world.day}), résolue par le jeu :`,
-        ...r.report.lines.map((l) => `- ${l}`),
-        ...r.notices.filter((n) => !r.report.lines.some((l) => l.includes(n))).map((n) => `- ${n}`),
-        r.report.event ? `\nÉVÉNEMENT DE LA SEMAINE (à jouer en scène) : ${r.report.event}` : "\nPas d'événement particulier cette semaine.",
-      ].join("\n");
-      const cards = [weekCard(state, r.state, action.plan, r.report.lines, Boolean(r.report.event))];
-      return { state: r.state, notices: r.notices, checks: [], facts, label, expectChoices: Boolean(r.report.event), cards };
+        `${span} (jours ${state.world.day} → ${r.state.world.day}), résolue${r.weeks > 1 ? "s" : ""} par le jeu :`,
+        ...r.lines.map((l) => `- ${l}`),
+        ...notices.filter((n) => !r.lines.some((l) => l.includes(n))).map((n) => `- ${n}`),
+        r.weeks > 1 ? `\nRaconte la période en accéléré (quelques moments choisis, le temps qui file), puis ralentis sur ce qui l'a interrompue.` : "",
+        r.stop ? `Le temps s'est arrêté : ${r.stop}.` : "",
+        r.birthday
+          ? `\nANNIVERSAIRE : le personnage a eu ${r.birthday.age} ans (${r.birthday.date}). Marque le coup par une courte scène : qui y pense, qui l'oublie, ce que cet âge change.`
+          : "",
+        r.event ? `\nÉVÉNEMENT (à jouer en scène) : ${r.event}` : "\nPas d'événement particulier.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const cards = [weekCard(state, r.state, action.plan, r.lines, Boolean(r.event), r.weeks, r.stop)];
+      if (r.birthday) cards.push(birthdayCard(r.state, r.birthday.age, r.birthday.date));
+      return { state: r.state, notices, checks: [], facts, label, expectChoices: Boolean(r.event || r.birthday), cards };
     }
     case "mission_start": {
       const r = startMission(state, action.offer, action.team, action.gadgets, rng, action.legend);

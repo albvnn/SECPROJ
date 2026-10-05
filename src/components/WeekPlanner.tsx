@@ -14,18 +14,54 @@ import { upcoming } from "@/lib/world/agenda";
 import { CITIES, findCity, findCountry } from "@/lib/world/geo";
 
 /** Planning d'une semaine : trois créneaux, puis le moteur fait passer sept jours. */
+export type Span = number | "auto";
+
+const SPANS: { value: Span; label: string; hint: string }[] = [
+  { value: 1, label: "1 sem.", hint: "Une semaine, racontée en détail" },
+  { value: 2, label: "2 sem.", hint: "Deux semaines avec le même planning" },
+  { value: 4, label: "1 mois", hint: "Quatre semaines avec le même planning" },
+  { value: "auto", label: "Auto", hint: "Jusqu'au prochain événement (8 semaines au plus) : nouvelle mission, devoir pressant, anniversaire, promotion, blessure…" },
+];
+
+export const playLabel = (span: Span) => (span === "auto" ? "Avancer jusqu'au prochain événement ▸" : span > 1 ? `Jouer ${span === 4 ? "le mois" : `${span} semaines`} ▸` : "Jouer la semaine ▸");
+
+/** Le rythme : combien de temps faire passer avec ce planning. */
+export function SpanPicker({ value, onChange, disabled = false }: { value: Span; onChange?: (s: Span) => void; disabled?: boolean }) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-sm border border-line" role="radiogroup" aria-label="Durée">
+      {SPANS.map((s) => (
+        <button
+          key={String(s.value)}
+          role="radio"
+          aria-checked={value === s.value}
+          disabled={disabled || !onChange}
+          onClick={() => onChange?.(s.value)}
+          title={s.hint}
+          className={`px-2 py-1 text-[10px] font-semibold tracking-[0.08em] uppercase transition-colors ${value === s.value ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function WeekSlots({
   state,
   plan,
   setPlan,
   onPlay,
   busy,
+  span = 1,
+  onSpan,
 }: {
   state: GameState;
   plan: ActivityChoice[];
   setPlan: (p: ActivityChoice[]) => void;
   onPlay?: () => void;
   busy: boolean;
+  span?: Span;
+  onSpan?: (s: Span) => void;
 }) {
   const error = planError(state, plan);
   const setSlot = (i: number, choice: ActivityChoice) => setPlan(plan.map((p, j) => (j === i ? choice : p)));
@@ -35,7 +71,7 @@ export function WeekSlots({
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-serif text-2xl">{state.character.prison ? "En cellule" : "Ta semaine"}</h3>
         <span className="text-[11px] text-faint">
-          Jour {state.world.day} → {state.world.day + 7}
+          Jour {state.world.day} → {span === "auto" ? "…" : state.world.day + 7 * span}
         </span>
       </div>
       <div className="space-y-2">
@@ -52,11 +88,21 @@ export function WeekSlots({
         ))}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>{error ?? "Sept jours passent, le narrateur raconte. Un événement peut survenir."}</p>
+        <p className={`min-w-0 flex-1 text-xs ${error ? "text-fail" : "text-muted"}`}>
+          {error ??
+            (span === "auto"
+              ? "Le temps file avec ce planning et s'arrête de lui-même sur ce qui compte."
+              : span > 1
+                ? `${span} semaines d'affilée avec ce planning ; le temps s'arrête plus tôt si quelque chose compte.`
+                : "Sept jours passent, le narrateur raconte. Un événement peut survenir.")}
+        </p>
         {onPlay && (
-          <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
-            Jouer la semaine ▸
-          </button>
+          <span className="flex flex-wrap items-center gap-2">
+            {!state.character.prison && <SpanPicker value={span} onChange={onSpan} disabled={busy} />}
+            <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
+              {playLabel(state.character.prison ? 1 : span)}
+            </button>
+          </span>
         )}
       </div>
     </section>

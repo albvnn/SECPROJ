@@ -428,6 +428,16 @@ export type StoryCard =
       deltas: { label: string; value: number; unit?: string; good: boolean }[];
       lines: string[];
       event: boolean;
+      /** Nombre de semaines jouées d'affilée (1 si absent). */
+      weeks?: number;
+      /** Pourquoi le temps s'est arrêté plus tôt. */
+      stop?: string | null;
+    }
+  | {
+      type: "anniversaire";
+      name: string;
+      age: number;
+      dateLabel: string;
     }
   | {
       type: "briefing";
@@ -1001,7 +1011,7 @@ export interface GameState {
   gmNotes: string;
   log: LogEntry[];
   choices: Choice[];
-  settings: { narration: NarrationMode; pace: Pace };
+  settings: { narration: NarrationMode; pace: Pace; span?: number | "auto" };
   scene: Scene | null;
   /** Tours joués depuis le début de la phase en cours. */
   phaseTurns: number;
@@ -1057,7 +1067,7 @@ export type PlayerAction =
   /** Coup signature du siège, ou soutien d'une Branche, pendant une mission. */
   | { type: "resource"; source: string }
   /** Jouer une semaine planifiée (trois créneaux). */
-  | { type: "week"; plan: ActivityChoice[] }
+  | { type: "week"; plan: ActivityChoice[]; span?: number | "auto" }
   /** Accepter une mission et la préparer (équipe, équipement, couverture). */
   | { type: "mission_start"; offer: string; team: string[]; gadgets: string[]; legend?: string }
   /** Choisir une approche à l'étape en cours d'une mission. */
