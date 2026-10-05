@@ -32,6 +32,7 @@ import { chambree, OPERATIVE_TRAITS } from "@/lib/game/roster";
 import { findCity, findCountry } from "@/lib/world/geo";
 import { worldSummary } from "@/lib/world/world";
 import { threatsSummary } from "@/lib/world/threats";
+import { clearance, clearanceDef, threatVisible } from "@/lib/game/intel";
 import { findPossession } from "@/lib/game/economy";
 import { daysBetween, formatDate } from "@/lib/game/calendar";
 import type { GameState, LogEntry, PhaseId, PlayerAction } from "@/lib/game/types";
@@ -161,7 +162,8 @@ function worldBlock(state: GameState): string {
     m ? `MISSION EN COURS (jouée par le moteur) :\n${missionBrief(state, m)}` : null,
     w.phase !== "dossier" && w.phase !== "recrutement" && w.phase !== "selection" ? `Vie hors mission :\n${lifeSummary(state)}` : null,
     `Monde :\n${worldSummary(w.geo, state.character.identity.agency)}`,
-    `Menaces identifiées : ${threatsSummary(w.geo)}`,
+    `Accréditation du personnage : ${clearanceDef(clearance(state)).label} — ${clearanceDef(clearance(state)).grants} Ne lui révèle rien au-delà de ce niveau sans une raison dans la scène (une source, un document, une indiscrétion).`,
+    `Menaces que le personnage connaît : ${threatsSummary({ ...w.geo, threats: w.geo.threats.filter((t) => threatVisible(state, t)) })}`,
     w.geo.nemeses.length
       ? `Ennemis nommés : ${w.geo.nemeses.map((n) => `${n.name}, ${n.title} (${n.status}, niveau ${n.level}, rancune ${n.grudge}) — ${n.history}`).join(" ; ")}`
       : null,

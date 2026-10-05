@@ -1,6 +1,6 @@
 "use client";
 
-import { geoNaturalEarth1, geoPath } from "d3-geo";
+import { geoGraticule10, geoInterpolate, geoNaturalEarth1, geoPath } from "d3-geo";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 import { useMemo, useRef, useState } from "react";
 import { feature, merge } from "topojson-client";
@@ -27,6 +27,8 @@ import {
   type ResourceId,
 } from "@/lib/world/geo";
 import { diplomacyBetween, diplomacyLabel, tensionLabel } from "@/lib/world/world";
+import { clearance, knownRegions, operativeKnown, rumourVisible, threatVisible } from "@/lib/game/intel";
+import { Classified, RequestButton } from "./IntelUI";
 
 const W = 1000;
 const H = 520;
@@ -62,8 +64,23 @@ function useShapes() {
     // Kosovo, Chypre du Nord et Somaliland n'ont pas de code dans l'atlas : leur nom sert d'identifiant (unique).
     const shapes: Shape[] = features.map((f) => ({ id: f.id === undefined ? `sans-code:${f.properties?.name}` : String(f.id), d: path(f) ?? "" }));
     const farEast = `M${FAR_EAST_OUTLINE.map((p) => projection(p)!.map((n) => n.toFixed(1)).join(",")).join("L")}Z`;
-    const graticule = path({ type: "Sphere" }) ?? "";
-    return { shapes, project: (lat: number, lon: number) => projection([lon, lat]) ?? [0, 0], farEast, graticule };
+    const sphere = path({ type: "Sphere" }) ?? "";
+    const graticule = path(geoGraticule10()) ?? "";
+    const project = (lat: number, lon: number) => projection([lon, lat]) ?? [0, 0];
+    /** Un itinéraire en arc de grand cercle (coupé au passage de l'antiméridien). */
+    const route = (a: CityDef, b: CityDef) => {
+      const interp = geoInterpolate([a.lon, a.lat], [b.lon, b.lat]);
+      let d = "";
+      let last: [number, number] | null = null;
+      for (let i = 0; i <= 40; i++) {
+        const [lon, lat] = interp(i / 40);
+        const pt = project(lat, lon);
+        d += `${!last || Math.abs(pt[0] - last[0]) > W / 3 ? "M" : "L"}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
+        last = pt;
+      }
+      return d;
+    };
+    return { shapes, project, farEast, graticule, sphere, route };
   }, []);
 }
 
@@ -82,8 +99,10 @@ interface CityInfo {
   agents: { name: string; codename: string; agency: AgencyId; day: number; status: string }[];
   assets: string[];
   station: boolean;
-  /** Menaces identifiées qui se préparent ici. */
-  threats: string[];
+  /** Menaces que tu as le droit de connaître, qui se préparent ici. */
+  threats: { label: string; progress: number; capstone?: boolean }[];
+  /** Quelque chose se prépare ici, sans plus de détails. */
+  rumours: number;
 }
 
 function cityInfos(state: GameState): Map<string, CityInfo> {
@@ -92,7 +111,7 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
     const city = findCity(id);
     if (!city) return null;
     if (!map.has(id))
-      map.set(id, { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [] });
+      map.set(id, { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [], rumours: 0 });
     return map.get(id)!;
   };
   for (const a of AGENCY_IDS) {
@@ -108,8 +127,9 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
   for (const o of state.offers) get(o.cityId)?.offers.push(o.title.split(" — ")[0]);
   for (const r of state.relations) if (r.cityId && r.status !== "archive" && r.status !== "mort") get(r.cityId)?.relations.push({ name: r.name, kind: r.kind, day: r.positionDay });
   const agency = state.character.identity.agency;
+  // Seuls les agents dont tu connais le dossier ont une position sur ta carte.
   for (const o of state.roster)
-    if (o.status !== "mort" && (o.agency === agency || o.missionsWithPlayer > 0))
+    if (o.status !== "mort" && (o.agency === agency || o.missionsWithPlayer > 0) && operativeKnown(state, o))
       get(o.cityId)?.agents.push({ name: o.name, codename: o.codename, agency: o.agency, day: o.positionDay, status: o.status });
   for (const a of state.command.assets) if (a.status === "actif") get(a.cityId)?.assets.push(`${a.name}, ${a.role}`);
   const stationCity = state.command.station?.cityId ?? state.character.station;
@@ -117,7 +137,13 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
     const s = get(stationCity);
     if (s) s.station = true;
   }
-  for (const t of state.world.geo.threats) if (t.known) get(t.cityId)?.threats.push(t.capstone ? `${t.title} (opération décisive)` : `${t.title} — ${t.progress}/100`);
+  for (const t of state.world.geo.threats) {
+    if (threatVisible(state, t)) get(t.cityId)?.threats.push({ label: t.title, progress: t.progress, capstone: t.capstone });
+    else if (rumourVisible(state, t)) {
+      const c = get(t.cityId);
+      if (c) c.rumours += 1;
+    }
+  }
   return map;
 }
 
@@ -135,8 +161,13 @@ const RELATION_COLORS: Record<string, string> = {
 /* Carte                                                               */
 /* ------------------------------------------------------------------ */
 
-export function WorldMap({ state }: { state: GameState }) {
-  const { shapes, project, farEast, graticule } = useShapes();
+export function WorldMap({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
+  const { shapes, project, farEast, graticule, sphere, route } = useShapes();
+  const lvl = clearance(state);
+  const watched = useMemo(() => knownRegions(state), [state]);
+  const seen = (region: string) => lvl >= 4 || watched.has(region);
+  const [hover, setHover] = useState<{ x: number; y: number; country: CountryDef } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const [layer, setLayer] = useState<Layer>("blocs");
   const [resource, setResource] = useState<ResourceId>("terres_rares");
   const [show, setShow] = useState({ people: true, agents: true, ops: true });
@@ -152,6 +183,7 @@ export function WorldMap({ state }: { state: GameState }) {
     if (!c) return "var(--map-land)";
     if (layer === "blocs") return c.bloc === "neutre" ? "var(--map-land)" : tint(BLOCS[c.bloc].color, c.bloc === agency ? 80 : 55);
     if (layer === "tensions") {
+      if (!seen(c.region)) return "var(--map-land)";
       const t = geo.tensions[c.region] ?? 50;
       return `color-mix(in srgb, var(--heat-high) ${t}%, var(--heat-low))`;
     }
@@ -174,12 +206,25 @@ export function WorldMap({ state }: { state: GameState }) {
     });
 
   const scale = 1 / view.k;
+  const here = findCity(state.world.cityId);
+  const centerOn = (lat: number, lon: number, k = 3) => {
+    const [px, py] = project(lat, lon);
+    setView({ k, x: W / 2 - px * k, y: H / 2 - py * k });
+  };
+  // Itinéraires : vers la mission en cours, ou vers les missions proposées.
+  const routes = here && !state.mission ? state.offers.map((o) => ({ id: o.id, to: findCity(o.cityId), assigned: o.assigned })).filter((r) => r.to && r.to.id !== here.id) : [];
+  const important = (info: CityInfo) => info.player || info.station || info.mission || info.offers.length > 0 || info.threats.length > 0 || info.hq.includes(agency);
   const selected = sel?.kind === "country" ? findCountry(sel.id) : undefined;
   const selectedCity = sel?.kind === "city" ? infos.get(sel.id) ?? (findCity(sel.id) ? { ...emptyInfo(findCity(sel.id)!) } : undefined) : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col lg:flex-row">
-      <div className="relative min-h-[300px] flex-1 overflow-hidden" style={{ background: "var(--map-ocean)" }}>
+      <div
+        ref={boxRef}
+        className="relative min-h-[300px] flex-1 overflow-hidden"
+        style={{ background: "radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--map-ocean) 85%, var(--color-ivory) 4%), var(--map-ocean) 75%)" }}
+        onMouseLeave={() => setHover(null)}
+      >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
@@ -208,9 +253,15 @@ export function WorldMap({ state }: { state: GameState }) {
             <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
               <line x1="0" y1="0" x2="0" y2="4" stroke="var(--bloc-hostile)" strokeWidth="1.4" />
             </pattern>
+            {/* Le brouillard : les régions que tu ne surveilles pas. */}
+            <pattern id="fog" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+              <rect width="6" height="6" fill="var(--map-ocean)" opacity="0.55" />
+              <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-ivory)" strokeOpacity="0.07" strokeWidth="1.5" />
+            </pattern>
           </defs>
           <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-            <path d={graticule} fill="none" stroke="var(--hairline)" strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+            <path d={sphere} fill="none" stroke="var(--line-strong, var(--hairline))" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.6} />
+            <path d={graticule} fill="none" stroke="var(--hairline)" strokeWidth={0.5} vectorEffect="non-scaling-stroke" />
             {shapes.map((s) => {
               const c = countryOfShape(s.id);
               const active = (sel?.kind === "country" && c?.id === sel.id) || (selectedCity && c?.id === selectedCity.city.country);
@@ -224,11 +275,21 @@ export function WorldMap({ state }: { state: GameState }) {
                   vectorEffect="non-scaling-stroke"
                   className="cursor-pointer transition-[fill] duration-300 hover:brightness-125"
                   onClick={() => !drag.current?.moved && c && setSel({ kind: "country", id: c.id })}
-                >
-                  <title>{c ? `${c.name} — ${BLOCS[c.bloc].label}` : ""}</title>
-                </path>
+                  onMouseMove={(e) => {
+                    if (!c || drag.current) return;
+                    const r = boxRef.current!.getBoundingClientRect();
+                    setHover({ x: e.clientX - r.left, y: e.clientY - r.top, country: c });
+                  }}
+                />
               );
             })}
+            {/* Brouillard sur les pays des régions que tu ne surveilles pas. */}
+            {lvl < 4 &&
+              shapes.map((s) => {
+                const c = countryOfShape(s.id);
+                if (!c || seen(c.region)) return null;
+                return <path key={`fog-${s.id}`} d={s.d} fill="url(#fog)" stroke="none" pointerEvents="none" />;
+              })}
             {/* La République d'Extrême-Orient, taillée dans la Russie. */}
             <path
               d={farEast}
@@ -264,10 +325,49 @@ export function WorldMap({ state }: { state: GameState }) {
                 </rect>
               );
             })}
+            {/* Itinéraires vers les missions. */}
+            {show.ops &&
+              here &&
+              routes.map((r) => (
+                <path
+                  key={r.id}
+                  d={route(here, r.to!)}
+                  fill="none"
+                  stroke="var(--color-fail)"
+                  strokeWidth={1.2}
+                  strokeDasharray="4 3"
+                  opacity={r.assigned ? 0.9 : 0.55}
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="none"
+                />
+              ))}
             {/* Marqueurs des villes. */}
             {[...infos.values()].map((info) => (
               <CityMarker key={info.city.id} info={info} project={project} scale={scale} show={show} agency={agency} onClick={() => !drag.current?.moved && setSel({ kind: "city", id: info.city.id })} />
             ))}
+            {/* Noms des villes qui comptent (toutes, une fois zoomé). */}
+            {[...infos.values()]
+              .filter((info) => view.k >= 2.5 || important(info))
+              .map((info) => {
+                const [x, y] = project(info.city.lat, info.city.lon);
+                return (
+                  <text
+                    key={`label-${info.city.id}`}
+                    x={x + 7 * scale}
+                    y={y + 3 * scale}
+                    fontSize={9 * scale}
+                    fill={info.player ? "var(--color-brass-soft)" : "var(--color-ivory)"}
+                    stroke="var(--map-ocean)"
+                    strokeWidth={2.5 * scale}
+                    paintOrder="stroke"
+                    opacity={info.player || important(info) ? 0.95 : 0.7}
+                    pointerEvents="none"
+                    style={{ fontFamily: "var(--font-sans)" }}
+                  >
+                    {info.city.name}
+                  </text>
+                );
+              })}
           </g>
         </svg>
 
@@ -315,7 +415,36 @@ export function WorldMap({ state }: { state: GameState }) {
             ))}
           </div>
         </div>
+        {hover && (
+          <div
+            className="pointer-events-none absolute z-10 w-56 rounded-sm border border-line-strong bg-panel/95 px-3 py-2 text-xs shadow-xl backdrop-blur"
+            style={{ left: Math.min(hover.x + 14, (boxRef.current?.clientWidth ?? 600) - 236), top: Math.max(8, hover.y - 10) }}
+          >
+            <p className="font-serif text-base leading-tight">{hover.country.name}</p>
+            <p className="text-[10px] tracking-[0.12em] uppercase" style={{ color: hover.country.bloc === "neutre" ? "var(--color-muted)" : BLOCS[hover.country.bloc].color }}>
+              {BLOCS[hover.country.bloc].label} · {REGIONS[hover.country.region].label}
+            </p>
+            {seen(hover.country.region) ? (
+              <p className="mt-1 text-muted">
+                Tension {tensionLabel(geo.tensions[hover.country.region] ?? 50)}
+                {lvl < 4 && watched.get(hover.country.region) ? <span className="text-faint"> · surveillée ({watched.get(hover.country.region)})</span> : null}
+              </p>
+            ) : (
+              <p className="mt-1 text-faint italic">Région que tu ne surveilles pas : tu n'en sais que ce que disent les journaux.</p>
+            )}
+            {(state.character.heat?.[hover.country.id] ?? 0) > 0 && (
+              <p className={(state.character.heat[hover.country.id] ?? 0) >= 60 ? "text-fail" : "text-partial"}>
+                Tu y es {heatLabel(state.character.heat[hover.country.id])} ({state.character.heat[hover.country.id]}/100)
+              </p>
+            )}
+          </div>
+        )}
         <div className="absolute right-3 bottom-3 flex flex-col overflow-hidden rounded-sm border border-line bg-panel/90 backdrop-blur">
+          {here && (
+            <button onClick={() => centerOn(here.lat, here.lon)} className="border-b border-line px-2.5 py-1 text-sm text-brass hover:text-brass-soft" aria-label="Centrer sur moi" title="Centrer sur moi">
+              ◎
+            </button>
+          )}
           <button onClick={() => zoomAt(W / 2, H / 2, 1.5)} className="px-2.5 py-1 text-sm text-muted hover:text-ivory" aria-label="Zoomer">
             +
           </button>
@@ -326,16 +455,16 @@ export function WorldMap({ state }: { state: GameState }) {
             ⟲
           </button>
         </div>
-        <Legend layer={layer} />
+        <Legend layer={layer} fog={lvl < 4} />
       </div>
 
       <aside className="scrollbar-thin max-h-[45vh] w-full shrink-0 overflow-y-auto border-t border-line bg-panel/60 p-4 lg:max-h-none lg:w-80 lg:border-t-0 lg:border-l">
         {selected ? (
-          <CountryPanel state={state} country={selected} infos={infos} onCity={(id) => setSel({ kind: "city", id })} onBack={() => setSel(null)} />
+          <CountryPanel state={state} country={selected} infos={infos} onCity={(id) => setSel({ kind: "city", id })} onBack={() => setSel(null)} onChange={onChange} seen={seen(selected.region)} />
         ) : selectedCity ? (
           <CityPanel state={state} info={selectedCity} onCountry={(id) => setSel({ kind: "country", id })} onBack={() => setSel(null)} />
         ) : (
-          <WorldPanel state={state} />
+          <WorldPanel state={state} onChange={onChange} />
         )}
       </aside>
     </div>
@@ -343,7 +472,7 @@ export function WorldMap({ state }: { state: GameState }) {
 }
 
 function emptyInfo(city: CityDef): CityInfo {
-  return { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [] };
+  return { city, player: false, hq: [], academy: [], mission: false, offers: [], relations: [], agents: [], assets: [], station: false, threats: [], rumours: 0 };
 }
 
 function CityMarker({
@@ -399,12 +528,25 @@ function CityMarker({
     label.push("Ta Station");
   }
   if (show.ops && info.threats.length) {
+    const worst = Math.max(...info.threats.map((t) => (t.capstone ? 100 : t.progress)));
     parts.push(
-      <text key="th" x={x - 9 * s} y={y + 3 * s} fontSize={9 * s} textAnchor="middle" fill="var(--color-fail)" fontWeight={700}>
-        !
+      <g key="th" pointerEvents="none">
+        {worst >= 75 && <circle cx={x} cy={y} r={3} fill="none" stroke="var(--color-fail)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="map-pulse" />}
+        <circle cx={x} cy={y} r={(4 + worst / 14) * s} fill="none" stroke="var(--color-fail)" strokeWidth={1} strokeDasharray="2 2" vectorEffect="non-scaling-stroke" opacity={0.85} />
+        <text x={x - 9 * s} y={y + 3 * s} fontSize={9 * s} textAnchor="middle" fill="var(--color-fail)" fontWeight={700}>
+          !
+        </text>
+      </g>,
+    );
+    label.push(...info.threats.map((t) => `Menace : ${t.label}${t.capstone ? " (opération décisive)" : ` — ${t.progress}/100`}`));
+  }
+  if (show.ops && info.rumours) {
+    parts.push(
+      <text key="ru" x={x - 9 * s} y={y + 3 * s} fontSize={9 * s} textAnchor="middle" fill="var(--color-partial)" fontWeight={700} pointerEvents="none">
+        ?
       </text>,
     );
-    label.push(...info.threats.map((t) => `Menace : ${t}`));
+    label.push("Rumeur : quelque chose se prépare ici");
   }
   if (show.ops && info.assets.length) {
     parts.push(<path key="as" d={`M${x - 8 * s},${y + 8 * s}l${3 * s},${-5 * s}l${3 * s},${5 * s}z`} fill="var(--color-partial)" />);
@@ -448,7 +590,7 @@ function CityMarker({
   );
 }
 
-function Legend({ layer }: { layer: Layer }) {
+function Legend({ layer, fog }: { layer: Layer; fog: boolean }) {
   return (
     <div className="absolute bottom-3 left-3 hidden flex-wrap gap-x-3 gap-y-1 rounded-sm border border-line bg-panel/90 px-2.5 py-1.5 text-[10px] text-muted backdrop-blur sm:flex">
       {layer === "blocs" &&
@@ -484,6 +626,12 @@ function Legend({ layer }: { layer: Layer }) {
       </span>
       <span className="flex items-center gap-1 text-fail">⌖ opérations</span>
       <span className="flex items-center gap-1 text-fail">! menaces</span>
+      <span className="flex items-center gap-1 text-partial">? rumeurs</span>
+      {fog && (
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-3 rounded-sm border border-line" style={{ background: "repeating-linear-gradient(-45deg, var(--map-land) 0 2px, var(--map-ocean) 2px 4px)" }} /> hors de tes régions
+        </span>
+      )}
     </div>
   );
 }
@@ -498,9 +646,12 @@ function ago(day: number | undefined, now: number) {
   return d <= 0 ? "aujourd'hui" : d < 7 ? `il y a ${d} j` : d < 60 ? `il y a ${Math.round(d / 7)} sem.` : `il y a ${Math.round(d / 30)} mois`;
 }
 
-function WorldPanel({ state }: { state: GameState }) {
+function WorldPanel({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
   const geo = state.world.geo;
   const me = state.character.identity.agency;
+  const lvl = clearance(state);
+  const watched = knownRegions(state);
+  const seen = (r: string) => lvl >= 4 || watched.has(r);
   const pairs: [AgencyId, AgencyId][] = [
     ["argos", "meridian"],
     ["meridian", "monsoon"],
@@ -515,6 +666,15 @@ function WorldPanel({ state }: { state: GameState }) {
             const v = diplomacyBetween(geo.diplomacy, a, b);
             const l = diplomacyLabel(v);
             const mine = a === me || b === me;
+            if (!mine && lvl < 3)
+              return (
+                <li key={`${a}${b}`}>
+                  <p className="mb-1 text-xs">
+                    <span style={{ color: AGENCIES[a].color }}>{AGENCIES[a].name}</span> · <span style={{ color: AGENCIES[b].color }}>{AGENCIES[b].name}</span>
+                  </p>
+                  <Classified need={3} />
+                </li>
+              );
             return (
               <li key={`${a}${b}`} className={mine ? "" : "opacity-70"}>
                 <p className="flex items-baseline justify-between text-xs">
@@ -523,6 +683,7 @@ function WorldPanel({ state }: { state: GameState }) {
                   </span>
                   <span className={v >= 25 ? "text-success" : v <= -40 ? "text-fail" : "text-muted"}>{l.label}</span>
                 </p>
+                {lvl >= 3 && (
                 <div className="relative mt-1 h-1.5 rounded-full bg-line">
                   <span className="absolute top-[-2px] left-1/2 h-2.5 w-px bg-line-strong" />
                   <span
@@ -534,6 +695,7 @@ function WorldPanel({ state }: { state: GameState }) {
                     }}
                   />
                 </div>
+                )}
                 <p className="mt-0.5 text-[10px] text-faint">{l.description}</p>
               </li>
             );
@@ -544,12 +706,22 @@ function WorldPanel({ state }: { state: GameState }) {
         <h3 className="label mb-2">Régions</h3>
         <ul className="space-y-1">
           {[...REGION_IDS]
-            .sort((x, y) => (geo.tensions[y] ?? 0) - (geo.tensions[x] ?? 0))
+            .sort((x, y) => Number(seen(y)) - Number(seen(x)) || (geo.tensions[y] ?? 0) - (geo.tensions[x] ?? 0))
             .map((r) => {
               const t = geo.tensions[r] ?? 50;
+              if (!seen(r))
+                return (
+                  <li key={r} className="flex items-center gap-2 text-xs text-faint" title={REGIONS[r].stakes}>
+                    <span className="flex-1 truncate">{REGIONS[r].label}</span>
+                    {lvl >= 2 ? <RequestButton state={state} kind="region" target={r} onChange={onChange} label="Rapport" /> : <span className="text-[10px]">?</span>}
+                  </li>
+                );
               return (
-                <li key={r} className="flex items-center gap-2 text-xs" title={REGIONS[r].stakes}>
-                  <span className="flex-1 truncate">{REGIONS[r].label}</span>
+                <li key={r} className="flex items-center gap-2 text-xs" title={`${REGIONS[r].stakes}${watched.get(r) ? ` — surveillée : ${watched.get(r)}` : ""}`}>
+                  <span className="flex-1 truncate">
+                    {watched.has(r) && lvl < 4 && <span className="mr-1 text-brass">◉</span>}
+                    {REGIONS[r].label}
+                  </span>
                   <span className="h-1 w-16 overflow-hidden rounded-full bg-line">
                     <span className="block h-full" style={{ width: `${t}%`, background: `color-mix(in srgb, var(--heat-high) ${t}%, var(--heat-low))` }} />
                   </span>
@@ -586,12 +758,17 @@ function CountryPanel({
   infos,
   onCity,
   onBack,
+  onChange,
+  seen,
 }: {
   state: GameState;
   country: CountryDef;
   infos: Map<string, CityInfo>;
   onCity: (id: string) => void;
   onBack: () => void;
+  onChange?: (s: GameState) => void;
+  /** La région du pays est-elle surveillée ? */
+  seen: boolean;
 }) {
   const bloc = BLOCS[country.bloc];
   const t = state.world.geo.tensions[country.region] ?? 50;
@@ -621,7 +798,16 @@ function CountryPanel({
         <div>
           <dt className="label mb-1">Tension régionale</dt>
           <dd className="text-muted">
-            {tensionLabel(t)} ({t}/100) — {REGIONS[country.region].stakes}
+            {seen ? (
+              <>
+                {tensionLabel(t)} ({t}/100) — {REGIONS[country.region].stakes}
+              </>
+            ) : (
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="italic">Tu ne surveilles pas cette région.</span>
+                {clearance(state) >= 2 && <RequestButton state={state} kind="region" target={country.region} onChange={onChange} label="Rapport régional" />}
+              </span>
+            )}
           </dd>
         </div>
         <div>
@@ -690,10 +876,12 @@ function CityPanel({ state, info, onCountry, onBack }: { state: GameState; info:
         </p>
       )}
       {info.threats.map((t) => (
-        <p key={t} className="text-xs text-fail">
-          ! Menace : {t}
+        <p key={t.label} className="text-xs text-fail">
+          ! Menace : {t.label}
+          {t.capstone ? " (opération décisive)" : ` — ${t.progress}/100`}
         </p>
       ))}
+      {info.rumours > 0 && <p className="text-xs text-partial">? Une rumeur : quelque chose se prépare ici.</p>}
       {[...info.hq, ...info.academy].map((a) => (
         <p key={a + (info.hq.includes(a) ? "hq" : "ac")} className="text-xs" style={{ color: AGENCIES[a].color }}>
           ◆ {info.hq.includes(a) ? `Siège de ${AGENCIES[a].name}` : `Académie de ${AGENCIES[a].name}`}

@@ -12,6 +12,8 @@ import type { AgencyId, GameState, HqModule, Operative, OperativeRole, RankId, S
 import { tint } from "@/lib/ui/color";
 import { CITIES, REGION_IDS, REGIONS, findCity, findCountry, type RegionId } from "@/lib/world/geo";
 import { SeatSigil } from "./sigils";
+import { AskPerson, Classified, RequestButton } from "./IntelUI";
+import { circleVisible, operativeKnown, operativeListed } from "@/lib/game/intel";
 import { RankBadge } from "./ui";
 
 function ago(day: number, now: number) {
@@ -36,6 +38,8 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
     .filter((o) => tab === "chambree" || role === "tous" || o.role === role || (role === "officier" && o.rank === "chef_station"))
     .filter((o) => !onlyFree || o.status === "apte")
     .sort((a, b) => b.missionsWithPlayer - a.missionsWithPlayer || b.affinity - a.affinity);
+  const listed = list.filter((o) => operativeListed(state, o));
+  const unseen = list.length - listed.length;
 
   const toggleSquad = (id: string) => {
     if (!onChange) return;
@@ -107,7 +111,8 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
       )}
       {error && <p className="text-xs text-fail">{error}</p>}
       <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {list.map((o) => {
+        {listed.map((o) => {
+          const filed = operativeKnown(state, o);
           const trait = OPERATIVE_TRAITS[o.trait];
           const city = findCity(o.cityId);
           const inSquad = state.command.squad.includes(o.id);
@@ -133,24 +138,31 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
                   </button>
                 )}
               </div>
-              <p className="mt-2 flex flex-wrap gap-x-2.5 text-[11px] text-ivory/80">
-                {top.map(([k, v]) => (
-                  <span key={k}>
-                    {SKILLS[k as keyof typeof SKILLS].label} <span className="font-mono">{v}</span>
-                  </span>
-                ))}
-              </p>
-              <p className="mt-1 text-[11px] text-faint" title={trait?.description}>
-                {trait?.label} — {trait?.description}
-              </p>
+              {filed ? (
+                <>
+                  <p className="mt-2 flex flex-wrap gap-x-2.5 text-[11px] text-ivory/80">
+                    {top.map(([k, v]) => (
+                      <span key={k}>
+                        {SKILLS[k as keyof typeof SKILLS].label} <span className="font-mono">{v}</span>
+                      </span>
+                    ))}
+                  </p>
+                  <p className="mt-1 text-[11px] text-faint" title={trait?.description}>
+                    {trait?.label} — {trait?.description}
+                  </p>
+                </>
+              ) : (
+                <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-faint">
+                  <span>Dossier non consulté.</span>
+                  <RequestButton state={state} kind="agent" target={o.id} onChange={onChange} label="Sa fiche" />
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
                 <span className={o.status === "apte" ? "text-success" : o.status === "blesse" ? "text-fail" : "text-partial"}>
                   {o.status === "apte" ? "disponible" : o.status.replace("_", " ")}
                   {o.fatigue >= 50 ? ` · fatigue ${o.fatigue}` : ""}
                 </span>
-                <span className="text-faint">
-                  {city?.name ?? "?"} · {ago(o.positionDay, state.world.day)}
-                </span>
+                <span className="text-faint">{filed ? `${city?.name ?? "?"} · ${ago(o.positionDay, state.world.day)}` : "position inconnue"}</span>
               </div>
               <div className="mt-1.5 flex items-center justify-between text-[10px]">
                 <span className={o.affinity >= 20 ? "text-success" : o.affinity <= -20 ? "text-fail" : "text-muted"}>
@@ -158,6 +170,7 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
                   {o.affinity}
                   {o.missionsWithPlayer ? ` · ${o.missionsWithPlayer} mission${o.missionsWithPlayer > 1 ? "s" : ""} ensemble` : ""}
                 </span>
+                {o.agency !== me && o.affinity >= 20 && filed && <AskPerson state={state} source="rival" refId={o.id} onChange={onChange} />}
                 {onChange && !known.has(o.name) && room && (o.missionsWithPlayer > 0 || o.role === "cadet" || o.affinity >= 25) && (
                   <button onClick={() => keep(o)} className="tracking-[0.1em] text-brass-soft uppercase hover:underline" title="L'ajouter à tes liens suivis">
                     + Garder le contact
@@ -168,7 +181,14 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
           );
         })}
       </ul>
-      {list.length === 0 && <p className="text-sm text-faint italic">Personne.</p>}
+      {listed.length === 0 && !unseen && <p className="text-sm text-faint italic">Personne.</p>}
+      {unseen > 0 && (
+        <Classified need={tab === me ? 4 : 5}>
+          {tab === me
+            ? `${unseen} membre${unseen > 1 ? "s" : ""} de l'agence dont tu ne connais pas le dossier.`
+            : `${unseen} agent${unseen > 1 ? "s" : ""} de ${AGENCIES[tab as AgencyId].name} que tu n'as jamais croisé${unseen > 1 ? "s" : ""}. On ne connaît un rival qu'en mission, ou par une fiche demandée à l'analyse.`}
+        </Classified>
+      )}
     </div>
   );
 }
@@ -177,6 +197,12 @@ export function TeamPanel({ state, onChange }: { state: GameState; onChange?: (s
 function CircleBoard({ state, agency }: { state: GameState; agency: AgencyId }) {
   const a = AGENCIES[agency];
   const mine = agency === state.character.identity.agency;
+  if (!circleVisible(state, agency))
+    return (
+      <Classified need={4}>
+        {a.circle.name.replace(/^./, (x) => x.toUpperCase())} : qui siège, qui est vacant, qui est en mission. Réservé à l'accréditation Région.
+      </Classified>
+    );
   return (
     <section className="rounded-sm border p-3" style={{ borderColor: tint(a.color, 35), background: tint(a.color, 4) }}>
       <p className="label" style={{ color: a.color }}>
@@ -273,7 +299,7 @@ export function CommandPanel({ state, onChange }: { state: GameState; onChange?:
       </section>
       {error && <p className="text-sm text-fail">{error}</p>}
 
-      {can(rank, "informants") && <Assets state={state} />}
+      {can(rank, "informants") && <Assets state={state} onChange={onChange} />}
       {can(rank, "station") && <StationSection state={state} run={run} />}
       {can(rank, "region") && <TheatreSection state={state} run={run} />}
       {can(rank, "agency") && <AgencySection state={state} run={run} />}
@@ -281,7 +307,7 @@ export function CommandPanel({ state, onChange }: { state: GameState; onChange?:
   );
 }
 
-function Assets({ state }: { state: GameState }) {
+function Assets({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
   const list = state.command.assets;
   return (
     <section>
@@ -301,6 +327,11 @@ function Assets({ state }: { state: GameState }) {
               <p className="text-[11px] text-muted">
                 {a.role} · {findCity(a.cityId)?.name}
               </p>
+              {a.status === "actif" && (
+                <div className="mt-1 text-right">
+                  <AskPerson state={state} source="informateur" refId={a.id} onChange={onChange} />
+                </div>
+              )}
               {a.status === "actif" ? (
                 <div className="mt-1.5 flex items-center gap-2 text-[10px] text-faint">
                   fiabilité

@@ -367,9 +367,10 @@ export async function runTurn(
           ...(p.messages?.length ? { messages: p.messages } : {}),
           ...(p.legende ? { legende: p.legende } : {}),
           day: state.world.day,
+          ...(state.mission ? { missionId: state.mission.id } : {}),
         };
         buffer.doc(doc);
-        state = { ...state, pieces: [...(state.pieces ?? []), doc].slice(-30) };
+        state = { ...state, pieces: [...(state.pieces ?? []), doc].slice(-60) };
         return { content: "Pièce affichée au joueur et rangée dans son carnet. Ne recopie pas son contenu : fais réagir le personnage." };
       }
       case TOOL_CHOICES: {

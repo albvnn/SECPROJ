@@ -34,6 +34,8 @@ import { WorldMap } from "./WorldMap";
 import { CommandPanel, TeamPanel } from "./Command";
 import { IntelBoard } from "./Intel";
 import { HQ } from "./HQ";
+import { Archives } from "./Archives";
+import { threatVisible } from "@/lib/game/intel";
 import { StoryCardView, StoryDocView } from "./StoryCards";
 import { weeklyUpkeep } from "@/lib/game/economy";
 import { ACTIVITIES, defaultPlan, planError } from "@/lib/game/planner";
@@ -42,7 +44,7 @@ import { canStartMission } from "@/lib/game/missions";
 import { RANKS, formatEuros } from "@/lib/game/rules";
 import type { ActivityChoice, RankId } from "@/lib/game/types";
 
-type MainTab = "recit" | "qg" | "monde" | "agence";
+type MainTab = "recit" | "qg" | "monde" | "agence" | "archives";
 
 interface LiveTurn {
   player: string | null;
@@ -350,11 +352,11 @@ export function GameScreen({ initial }: { initial: GameState }) {
                   <SubTabs value={worldView} onChange={setWorldView} options={[["carte", "Carte"], ["renseignement", "Renseignement"]]} />
                   {worldView === "carte" ? (
                     <div className="min-h-0 flex-1">
-                      <WorldMap state={state} />
+                      <WorldMap state={state} onChange={busy ? undefined : commit} />
                     </div>
                   ) : (
                     <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                      <IntelBoard state={state} />
+                      <IntelBoard state={state} onChange={busy ? undefined : commit} />
                     </div>
                   )}
                 </>
@@ -362,6 +364,11 @@ export function GameScreen({ initial }: { initial: GameState }) {
               {tab === "qg" && (
                 <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
                   <HQ state={state} plan={plan} setPlan={setPlan} busy={busy} onAction={(a) => play(a)} onChange={busy ? undefined : commit} onBackToStory={() => setTab("recit")} />
+                </div>
+              )}
+              {tab === "archives" && (
+                <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+                  <Archives state={state} />
                 </div>
               )}
               {tab === "agence" && (
@@ -873,7 +880,7 @@ function NarratorBlock({
 function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setTab: (t: MainTab) => void }) {
   const c = state.character;
   const started = state.world.phase !== "dossier";
-  const urgent = state.world.geo.threats.filter((t) => t.known && (t.capstone || t.progress >= 75)).length;
+  const urgent = state.world.geo.threats.filter((t) => threatVisible(state, t) && (t.capstone || t.progress >= 75)).length;
   const hqLabel = state.mission ? "Mission" : c.prison ? "Cellule" : c.rank === "aspirant" ? "Académie" : "QG";
   const tabs: { id: MainTab; label: string; badge?: number; hint: string }[] = [
     { id: "recit", label: "Récit", hint: "L'histoire, tes choix" },
@@ -882,6 +889,7 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
       : []),
     { id: "monde", label: "Monde", badge: c.rank !== "prospect" ? urgent : 0, hint: "Carte et renseignement" },
     { id: "agence", label: "Agence", hint: "Le Cercle, l'effectif, ce que tu diriges" },
+    { id: "archives", label: "Archives", hint: "Tes opérations, tes rapports, tes pièces, les dossiers de l'agence" },
   ];
   if (!started) return null;
   return (

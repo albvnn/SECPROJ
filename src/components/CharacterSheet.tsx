@@ -61,6 +61,7 @@ import type {
 } from "@/lib/game/types";
 import { PoleEmblem, SkillGlyph } from "./glyphs";
 import { DOC_LABELS, StoryDocView } from "./StoryCards";
+import { AskPerson } from "./IntelUI";
 import { Possessions } from "./WeekPlanner";
 import { RichText } from "./RichText";
 import { BranchSigil, SeatSigil } from "./sigils";
@@ -956,7 +957,7 @@ function Relations({ state, onChange, onAction }: SheetProps) {
       </p>
       <ul className="space-y-3">
         {sorted.map((r) => (
-          <RelationCard key={r.name} r={r} day={state.world.day} onAction={onAction} onArchive={onChange && (() => setStatus(r.name, "archive"))} />
+          <RelationCard key={r.name} r={r} day={state.world.day} onAction={onAction} onArchive={onChange && (() => setStatus(r.name, "archive"))} onAsk={{ state, onChange }} />
         ))}
       </ul>
       {lost.length > 0 && (
@@ -992,11 +993,14 @@ function RelationCard({
   day,
   onAction,
   onArchive,
+  onAsk,
 }: {
   r: Relation;
   day: number;
   onAction?: (a: PlayerAction) => void;
   onArchive?: () => void;
+  /** Lui poser une question de renseignement (coûte une faveur). */
+  onAsk?: { state: GameState; onChange?: (s: GameState) => void };
 }) {
   const [contact, setContact] = useState(false);
   const [intent, setIntent] = useState("");
@@ -1075,6 +1079,7 @@ function RelationCard({
               Archiver
             </button>
           )}
+          {reachable && !contact && onAsk && <AskPerson state={onAsk.state} source="relation" refId={r.name} onChange={onAsk.onChange} />}
           {onAction && reachable && !contact && (
             <button onClick={() => setContact(true)} className="text-[10px] font-semibold tracking-[0.12em] text-brass-soft uppercase hover:underline">
               ☎ Contacter

@@ -58,6 +58,7 @@ import type {
 import { addDays, addYears, ageAt, isoDate } from "./calendar";
 import { commandOnPromotion, emptyCommand } from "./command";
 import { injuryMalus } from "./field";
+import { clearanceDef, clearanceOf } from "./intel";
 import { generateRoster } from "./roster";
 import { findCity, findCountryByName, matchCity, CITIES as MAP_CITIES } from "@/lib/world/geo";
 import { initialGeo } from "@/lib/world/world";
@@ -205,6 +206,8 @@ export function createGameState(draft: CharacterDraft): GameState {
     gmNotes: "",
     progress: [],
     pieces: [],
+    knowledge: emptyKnowledge(),
+    missionLog: [],
     log: [],
     choices: [],
     settings: { narration: "eco", pace: "rapide" },
@@ -240,6 +243,10 @@ function homeCity(identity: Identity): string {
   const country = findCountryByName(identity.nationality);
   const city = MAP_CITIES.find((c) => c.country === country?.id && !c.tags?.includes("secret"));
   return city?.id ?? AGENCIES[identity.agency].academyCity;
+}
+
+export function emptyKnowledge(): GameState["knowledge"] {
+  return { regions: {}, operatives: [], factions: [], recon: {}, threats: {}, requests: [], circles: [] };
 }
 
 export function emptyUsage(): GameState["usage"] {
@@ -332,6 +339,9 @@ export function normalizeState(s: GameState): GameState {
     })),
     progress: s.progress ?? [],
     pieces: s.pieces ?? [],
+    // Les demandes d'avant le réseau de sources n'ont pas de source : elles sont abandonnées.
+    knowledge: { ...emptyKnowledge(), ...(s.knowledge ?? {}), requests: (s.knowledge?.requests ?? []).filter((r) => r.source) },
+    missionLog: s.missionLog ?? [],
     settings: { narration: s.settings?.narration ?? "eco", pace: s.settings?.pace ?? "rapide" },
     scene: s.scene ?? null,
     phaseTurns: s.phaseTurns ?? 0,
@@ -673,6 +683,9 @@ export function promote(state: GameState, to: RankId, opts: { seat?: string; sta
     command = { ...command, directorVacant: false };
     goTo(agency.hqCity);
   }
+  const before = clearanceOf(state.character.rank);
+  const after = clearanceOf(to);
+  if (after > before) notices.push(`Accréditation ${clearanceDef(after).label} : ${clearanceDef(after).grants}`);
   return { state: commandOnPromotion({ ...state, character: c, world: w, command, updatedAt: Date.now() }), notices };
 }
 

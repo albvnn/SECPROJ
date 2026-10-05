@@ -19,6 +19,7 @@ import { addDays } from "./calendar";
 import { weeklyAgenda } from "@/lib/world/agenda";
 import { satisfactionOf, weeklyThreats } from "@/lib/world/threats";
 import { addNews, shiftDiplomacy, shiftTension, weeklyWorld } from "@/lib/world/world";
+import { resolveRequests } from "./sources";
 
 export const SLOTS = 3;
 
@@ -536,6 +537,14 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
   for (const h of healing.healed) {
     notices.push(`Guéri : ${h}`);
     lines.push(`Guéri : ${h}.`);
+  }
+
+  // Les réponses aux demandes de renseignement.
+  {
+    const r = resolveRequests(state, rng);
+    state = r.state;
+    lines.push(...r.lines);
+    notices.push(...r.notices);
   }
 
   // En détention : évasion réussie, ou échange négocié.

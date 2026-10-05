@@ -454,6 +454,12 @@ export interface StoryDoc {
   legende?: string;
   /** Jour de jeu où la pièce a été montrée. */
   day?: number;
+  /** Pour un rapport : la question posée, la cotation de la source, la mission concernée. */
+  topic?: IntelRequestKind;
+  grade?: string;
+  offerId?: string;
+  /** Mission pendant laquelle la pièce a été trouvée ou montrée. */
+  missionId?: string;
 }
 
 export interface LogEntry {
@@ -700,6 +706,35 @@ export interface Mission {
   bonusMerit?: number;
   /** Choix contraires aux Règles de Lucerne. */
   rulebreaks?: number;
+  /** La proposition d'où vient la mission (pour y rattacher repérages et rapports). */
+  offerId?: string;
+}
+
+/** Une mission terminée, telle qu'elle reste aux archives. */
+export interface MissionRecord {
+  id: string;
+  offerId?: string;
+  name: string;
+  kind: MissionKind;
+  importance: MissionImportance;
+  result: MissionResult;
+  city: string;
+  country: string;
+  region: string;
+  faction: string;
+  target: string;
+  objective: string;
+  cover: string;
+  team: string[];
+  startDay: number;
+  endDay: number;
+  steps: { title: string; status: NodeStatus; key?: boolean; secondary?: boolean; dilemma?: boolean }[];
+  /** Ce que la hiérarchie en a retenu (bilan du moteur). */
+  report: string[];
+  exposure: number;
+  blown?: boolean;
+  /** Ennemi nommé affronté. */
+  nemesis?: string;
 }
 
 export interface MissionOffer {
@@ -859,6 +894,56 @@ export interface Command {
   labFavor: number;
 }
 
+/* ------------------------------------------------------------------ */
+/* Renseignement : ce que le personnage sait                           */
+/* ------------------------------------------------------------------ */
+
+export type IntelRequestKind = "reperages" | "menace" | "region" | "agent" | "faction" | "cercle";
+
+/** À qui l'on pose la question. */
+export type SourceKind = "analyse" | "hierarchie" | "relation" | "informateur" | "rival" | "courtier" | "presse";
+
+/** Une question posée à une source : la réponse arrive après quelques jours, plus ou moins fiable. */
+export interface IntelRequest {
+  id: string;
+  kind: IntelRequestKind;
+  /** Mission proposée, menace, région, agent, faction ou agence visée. */
+  target: string;
+  /** Libellé lisible de la cible, figé au dépôt. */
+  label: string;
+  filedDay: number;
+  readyDay: number;
+  source: SourceKind;
+  /** La source précise : nom d'une relation, informateur, agent, courtier. */
+  sourceRef?: string;
+  sourceLabel: string;
+  /** Cotation à la manière des services : fiabilité de la source (A à E) et crédibilité de l'information (1 à 5). */
+  grade: string;
+  /** Ce que la question a coûté, en clair. */
+  cost: string;
+  /** Décidé au dépôt, jamais montré : la source dira-t-elle vrai ? */
+  truthful: boolean;
+  /** Mission proposée à laquelle la réponse se rattache. */
+  offerId?: string;
+}
+
+export interface Knowledge {
+  /** Rapports régionaux reçus : région → jour du rapport (ils vieillissent). */
+  regions: Record<string, number>;
+  /** Fiches d'agents consultées. */
+  operatives: string[];
+  /** Profils de factions ouverts. */
+  factions: string[];
+  /** Repérages faits pour une mission proposée : ses étapes, connues d'avance. */
+  recon: Record<string, MissionNode[]>;
+  /** Menaces étudiées : renseignement de départ en plus pour une mission contre elles. */
+  threats: Record<string, number>;
+  /** Demandes en cours. */
+  requests: IntelRequest[];
+  /** Agences rivales dont on a percé le Cercle. */
+  circles: AgencyId[];
+}
+
 export interface GameState {
   version: 4;
   id: string;
@@ -915,6 +1000,10 @@ export interface GameState {
   progress: ProgressEntry[];
   /** Pièces montrées par le narrateur, gardées dans le carnet (les plus récentes en dernier). */
   pieces: StoryDoc[];
+  /** Ce que le personnage sait au-delà de son accréditation : rapports, fiches, repérages, demandes en cours. */
+  knowledge: Knowledge;
+  /** Toutes les missions terminées, pour les archives. */
+  missionLog: MissionRecord[];
   /** Consommation cumulée de l'API sur la partie. */
   usage: Usage & { turns: number };
 }
