@@ -12,12 +12,11 @@ import {
   chooseRoute,
   currentNode,
   difficultyLabel,
-  maxGadgets,
-  maxTeam,
+  missionAllowance,
+  type Allowance,
   nodeOptions,
   offersAreAssigned,
   regionLabel,
-  requisitionBudget,
   situationalBonuses,
   suggestedTeam,
 } from "@/lib/game/missions";
@@ -27,7 +26,8 @@ import type { Approach, GameState, Mission, MissionOffer, NodeStatus, Operative,
 import { tint } from "@/lib/ui/color";
 import { findCity, findCountry } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
-import { fundingFactor } from "@/lib/world/threats";
+import { threatVisible } from "@/lib/game/intel";
+import { Classified, RequestButton } from "./IntelUI";
 import { SkillGlyph } from "./glyphs";
 
 const IMPORTANCE_COLOR: Record<string, string> = {
@@ -150,12 +150,12 @@ export function Preparation({
   const country = findCountry(city?.country ?? "");
   const faction = findFaction(offer.faction);
   const catalog = availableGadgets(state);
-  const funding = fundingFactor(state.world.geo, c.identity.agency);
-  const budget = Math.round(requisitionBudget(state) * funding);
+  const allowance = missionAllowance(state, offer);
+  const budget = allowance.budget;
   const spent = gadgets.reduce((n, id) => n + (catalog.find((g) => g.id === id)?.cost ?? 0), 0);
-  const slots = maxGadgets(state);
+  const slots = allowance.gadgetSlots;
   const pool = state.roster.filter((o) => o.agency === c.identity.agency && o.role !== "cadet" && isAvailable(o, state.world.day));
-  const limit = offer.kind === "jeunesse" ? 1 : maxTeam(c.rank);
+  const limit = allowance.teamSize;
   const blocker = canStartMission(state);
   const canDelegate = can(c.rank, "delegate") && offer.kind !== "jeunesse";
 
@@ -193,6 +193,8 @@ export function Preparation({
       </header>
 
       <FieldBrief state={state} offer={offer} />
+      <AllowanceSheet allowance={allowance} />
+      <Recon state={state} offer={offer} onChange={onChange} />
 
       {c.legends.length > 0 && (
         <section>
@@ -241,7 +243,6 @@ export function Preparation({
       <section>
         <h3 className="label mb-1">
           Réquisition · {gadgets.length}/{slots} gadgets · {formatEuros(spent)} sur {formatEuros(budget)}
-          {funding < 0.98 || funding > 1.02 ? <span className={funding < 1 ? "text-fail" : "text-success"}> (budget ×{funding.toFixed(2)} selon la satisfaction des gouvernements)</span> : null}
         </h3>
         <div className="mb-3 h-1 overflow-hidden rounded-full bg-line">
           <div className="h-full rounded-full bg-brass" style={{ width: `${Math.min(100, (spent / budget) * 100)}%` }} />
@@ -367,14 +368,84 @@ function FieldBrief({ state, offer }: { state: GameState; offer: MissionOffer })
           <>
             <span className="text-fail">{nemesis.name}</span>, {nemesis.title} — niveau {nemesis.level}, rancune {nemesis.grudge}. {nemesis.history}
           </>
-        ) : threat ? (
+        ) : threat && threatVisible(state, threat) ? (
           <>
             {threat.title} : avancement {threat.progress}/100{threat.capstone ? " — l'opération décisive contre la tête de la faction." : "."}
+            {state.knowledge.threats[threat.id] ? <span className="block text-success">Étudiée : +{state.knowledge.threats[threat.id]} renseignement au départ.</span> : null}
           </>
+        ) : threat ? (
+          "Une opération adverse en cours, dont tu ne sais rien de plus."
         ) : (
           "Aucun ennemi nommé dans ce dossier."
         )}
       </Brief>
+    </section>
+  );
+}
+
+/** La dotation : ce que l'agence t'accorde, ligne à ligne. */
+function AllowanceSheet({ allowance: a }: { allowance: Allowance }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="rounded-sm border border-line bg-panel/50">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-left" aria-expanded={open}>
+        <span className="label w-full sm:w-auto">Dotation</span>
+        {[
+          ["Réquisition", formatEuros(a.budget)],
+          ["Fonds d'opération", formatEuros(a.funds)],
+          ["Gadgets", `${a.gadgetSlots}`],
+          ["Équipiers", `${a.teamSize}`],
+          ["Renseignement", `${a.intel}`],
+        ].map(([k, v]) => (
+          <span key={k} className="text-xs text-muted">
+            {k} <span className="font-mono text-sm text-ivory">{v}</span>
+          </span>
+        ))}
+        <span className="ml-auto text-[10px] tracking-[0.12em] text-faint uppercase">{open ? "▾" : "▸"} pourquoi</span>
+      </button>
+      {open && (
+        <ul className="animate-rise space-y-1 border-t border-line px-4 py-3 text-xs">
+          {a.lines.map((l, i) => (
+            <li key={i} className="flex gap-2">
+              <span className={`w-3 shrink-0 ${l.tone === "plus" ? "text-success" : l.tone === "minus" ? "text-fail" : "text-faint"}`}>{l.tone === "plus" ? "+" : l.tone === "minus" ? "−" : "·"}</span>
+              <span className="text-ivory/90">{l.label}</span>
+              <span className="text-muted">— {l.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Les repérages : les étapes connues d'avance, ou la demande pour les connaître. */
+function Recon({ state, offer, onChange }: { state: GameState; offer: MissionOffer; onChange: (s: GameState) => void }) {
+  const nodes = state.knowledge.recon[offer.id];
+  const left = offer.expiresDay - state.world.day;
+  if (!nodes)
+    return (
+      <Classified
+        need={1}
+        action={<RequestButton state={state} kind="reperages" target={offer.id} onChange={onChange} />}
+      >
+        Le terrain est inconnu : tu découvriras les étapes en mission.{" "}
+        {left <= 7 ? "Les repérages prennent une semaine, et ce dossier expire bientôt." : "Des repérages te les donneraient d'avance, avec un point de renseignement de plus."}
+      </Classified>
+    );
+  return (
+    <section className="rounded-sm border border-success/40 bg-success/[0.05] p-3">
+      <p className="label text-success">Repérages · {nodes.length} étapes connues d'avance · +1 renseignement</p>
+      <ol className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
+        {nodes.map((n, i) => (
+          <li key={i} className="flex gap-2">
+            <span className={`w-5 shrink-0 text-center font-mono ${n.key ? "text-brass" : "text-faint"}`}>{n.type === "dilemme" ? "?" : n.key ? "★" : n.type === "secondaire" ? "◇" : i + 1}</span>
+            <span className="min-w-0">
+              <span className="text-ivory/90">{n.title.replace(/\{cover\}/g, "ta couverture")}</span>
+              {n.alt && <span className="text-muted"> — ou : {n.alt.title}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

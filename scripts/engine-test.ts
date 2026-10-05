@@ -1,7 +1,7 @@
 /** Tests hors-ligne du moteur v4. `npx tsx scripts/engine-test.ts` */
 import { applyUpdate, createGameState, freeSeats, normalizeState, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
 import { resolveWeek, defaultPlan, planError } from "../src/lib/game/planner";
-import { canStartMission, chooseRoute, currentNode, makeOffer, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
+import { canStartMission, chooseRoute, currentNode, makeOffer, missionAllowance, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
 import { resolveNode, runEngineAction } from "../src/lib/game/actions";
 import { buyModule, delegateOffer, openStation, setSquad } from "../src/lib/game/command";
 import { buyPossession, weeklyUpkeep } from "../src/lib/game/economy";
@@ -9,6 +9,8 @@ import { trip, languageBonus } from "../src/lib/game/field";
 import { AGENCIES } from "../src/lib/game/agencies";
 import { eventsBetween } from "../src/lib/world/agenda";
 import type { GameState } from "../src/lib/game/types";
+import { clearance, operativeKnown, operativeListed, threatVisible } from "../src/lib/game/intel";
+import { fileRequest, sourceOffers } from "../src/lib/game/sources";
 
 let failures = 0;
 const check = (label: string, ok: boolean, extra = "") => {
@@ -143,7 +145,8 @@ s = { ...s, character: { ...s.character, prison: { country: "364", cityId: "tehe
 check("en détention : planning spécial", planError(s, defaultPlan(s)) === null && planError(s, [{ activity: "repos" }, { activity: "repos" }, { activity: "repos" }]) !== null);
 check("pas de mission en détention", canStartMission(s) !== null);
 let freed = false;
-for (let i = 0; i < 12 && !freed; i++) {
+// L'échange et l'évasion sont aléatoires : on laisse jusqu'à 30 semaines.
+for (let i = 0; i < 30 && !freed; i++) {
   const r = resolveWeek(s, defaultPlan(s), rng);
   s = r.state;
   freed = !s.character.prison;
@@ -157,7 +160,7 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
   const card = wk.cards[0];
   check("carte : bilan de semaine", card?.type === "semaine" && card.plan.length === 3 && card.toDay === card.fromDay + 7);
   t = { ...wk.state, world: { ...wk.state.world, restUntil: wk.state.world.day } };
-  t = { ...t, offers: [makeOffer(t, rng)] };
+  t = { ...t, character: { ...t.character, reputation: Math.max(20, t.character.reputation) }, offers: [makeOffer(t, rng)] };
   const go = runEngineAction(t, { type: "mission_start", offer: t.offers[0].id, team: [], gadgets: [] }, roll, rng)!;
   check("carte : ordre de mission", go.cards[0]?.type === "briefing" && go.cards[0].steps.length === go.state.mission!.nodes.length);
   t = go.state;
@@ -169,6 +172,64 @@ check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours d
     t = step.state;
   }
   check("cartes : étapes et débriefing", kinds.has("etape") && kinds.has("bilan"), [...kinds].join(", "));
+  check("archives : la mission est consignée", (t.missionLog ?? []).some((r) => r.name === go.state.mission!.name && r.steps.length > 0 && r.report.length > 0));
+}
+
+// Accréditation et demandes de renseignement.
+{
+  let t = createGameState({
+    identity: { firstName: "Iris", lastName: "Test", age: 17, gender: "fille", birthplace: "Lyon, France", appearance: "", languages: "Français", agency: "argos", nationality: "France" },
+    originId: "pupille", dramaId: "abandon", motivationId: "appartenance", qualities: ["memoire", "nerfs"], flaw: "mefiant", playerNotes: "",
+    attributes: { esprit: 4, ame: 3, corps: 2, geste: 3 }, signature: "regard", skillPicks: { logique: 1, archives: 1, sangfroid: 1 },
+  });
+  check("prospect : aucune accréditation", clearance(t) === 0 && t.world.geo.threats.every((x) => !threatVisible(t, x)));
+  t = applyUpdate(applyUpdate(applyUpdate(t, { phase: "recrutement" }).state, { phase: "selection" }).state, { phase: "base", jours_ecoules: 100 }).state;
+  while (!promotionsAvailable(t).includes("agent")) t = resolveWeek(t, defaultPlan(t), rng).state;
+  t = promote(t, "agent", { station: "istanbul" }).state;
+  check("officier : accréditation Station", clearance(t) === 2);
+  // Une menace loin de la Station reste cachée à un officier.
+  const far = { id: "far", faction: "chinois", region: "oceanie", cityId: "sydney", template: "cyber", title: "test lointain", progress: 40, known: true };
+  t = { ...t, world: { ...t.world, restUntil: t.world.day, geo: { ...t.world.geo, threats: [...t.world.geo.threats, far] } } };
+  check("menace hors de sa région : cachée", !threatVisible(t, far));
+  const rival = t.roster.find((o) => o.agency === "meridian" && o.role === "titulaire")!;
+  check("agents rivaux inconnus : hors des listes", !operativeListed(t, rival) && !operativeKnown(t, rival));
+  const analyse = (kind: Parameters<typeof sourceOffers>[1], target: string, st = t) => sourceOffers(st, kind, target).find((o) => o.source === "analyse")!;
+  check("fiche d'un agent rival : l'analyse exige le Cercle", analyse("agent", rival.id).blocker !== null);
+  const broker = sourceOffers({ ...t, character: { ...t.character, money: 50000 } }, "agent", rival.id).find((o) => o.source === "courtier" && !o.blocker);
+  check("… mais un courtier la vend", Boolean(broker && broker.cost.money && broker.cost.heat), broker?.costText);
+  const favor = t.command.branchFavor.bibliotheque ?? 0;
+  t = fileRequest(t, "region", "oceanie", { source: "analyse" }, rng);
+  check("demande déposée : estime de la Bibliothèque entamée", t.knowledge.requests.length === 1 && (t.command.branchFavor.bibliotheque ?? 0) < favor);
+  t = { ...t, offers: [makeOffer(t, rng)] };
+  check("la hiérarchie répond sur ses propres missions", sourceOffers(t, "reperages", t.offers[0].id).some((o) => o.source === "hierarchie" && !o.blocker));
+  t = fileRequest(t, "reperages", t.offers[0].id, { source: "analyse" }, rng);
+  check("deux questions à l'analyse au plus à ce niveau", analyse("menace", far.id).blocker?.includes("au plus") === true);
+  // Pour le test, les sources disent vrai.
+  t = { ...t, knowledge: { ...t.knowledge, requests: t.knowledge.requests.map((r) => ({ ...r, truthful: true })) } };
+  const before = t.pieces.length;
+  t = resolveWeek(t, defaultPlan(t), rng).state;
+  check("réponses reçues avec la semaine, rangées avec leur cotation", t.knowledge.requests.length === 0 && t.pieces.length === before + 2 && t.pieces.slice(-2).every((p) => p.grade === "A-2"));
+  check("rapport régional : la menace apparaît", threatVisible(t, t.world.geo.threats.find((x) => x.id === "far") ?? far));
+  const offerId = t.offers.find((o) => t.knowledge.recon[o.id])?.id;
+  if (offerId) {
+    const planned = t.knowledge.recon[offerId].map((n) => n.title);
+    const go = startMission({ ...t, world: { ...t.world, restUntil: t.world.day } }, offerId, [], [], rng).state;
+    const real = go.mission!.nodes.map((n) => n.title);
+    check("repérages : les étapes prévues sont les vraies", planned.every((title) => real.some((r) => r === title.replace(/\{cover\}/g, go.mission!.cover))), `${planned.length} étapes`);
+  } else check("repérages : la mission a expiré entre-temps", true, "offre expirée");
+}
+
+// Dotation : grade, potentiel, rôle, importance.
+{
+  const base = { ...s, character: { ...s.character, prison: null } };
+  const offer = makeOffer(base, rng);
+  const local = missionAllowance(base, { ...offer, importance: "locale", kind: "standard" });
+  const world = missionAllowance(base, { ...offer, importance: "mondiale", kind: "standard" });
+  check("dotation : une mission mondiale reçoit plus", world.budget > local.budget && world.teamSize > local.teamSize && world.gadgetSlots > local.gadgetSlots, `${local.budget} → ${world.budget}`);
+  const trusted = missionAllowance({ ...base, character: { ...base.character, reputation: 90, blames: 0 } }, offer);
+  const doubted = missionAllowance({ ...base, character: { ...base.character, reputation: 5, blames: 3 } }, offer);
+  check("dotation : la confiance de la hiérarchie compte", trusted.funds > doubted.funds && trusted.trust > doubted.trust, `×${doubted.trust.toFixed(2)} → ×${trusted.trust.toFixed(2)}`);
+  check("dotation : chaque ligne s'explique", world.lines.length >= 3);
 }
 
 // Migration d'une sauvegarde v3.

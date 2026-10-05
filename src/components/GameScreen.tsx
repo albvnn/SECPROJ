@@ -34,6 +34,11 @@ import { WorldMap } from "./WorldMap";
 import { CommandPanel, TeamPanel } from "./Command";
 import { IntelBoard } from "./Intel";
 import { HQ } from "./HQ";
+import { Archives } from "./Archives";
+import { Mallette } from "./Mallette";
+import { Terminal, type NavTarget } from "./Terminal";
+import type { SheetTab } from "./CharacterSheet";
+import { threatVisible } from "@/lib/game/intel";
 import { StoryCardView, StoryDocView } from "./StoryCards";
 import { weeklyUpkeep } from "@/lib/game/economy";
 import { ACTIVITIES, defaultPlan, planError } from "@/lib/game/planner";
@@ -42,7 +47,7 @@ import { canStartMission } from "@/lib/game/missions";
 import { RANKS, formatEuros } from "@/lib/game/rules";
 import type { ActivityChoice, RankId } from "@/lib/game/types";
 
-type MainTab = "recit" | "qg" | "monde" | "agence";
+type MainTab = "recit" | "qg" | "monde" | "agence" | "archives";
 
 interface LiveTurn {
   player: string | null;
@@ -93,6 +98,31 @@ export function GameScreen({ initial }: { initial: GameState }) {
   const [worldView, setWorldView] = useState<"carte" | "renseignement">("carte");
   const [agencyView, setAgencyView] = useState<"effectif" | "commandement">("effectif");
   const [storageWarning, setStorageWarning] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [malletteOpen, setMalletteOpen] = useState(false);
+  const [offerFocus, setOfferFocus] = useState<{ id: string; n: number } | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ id: string; n: number } | null>(null);
+  const [archiveFocus, setArchiveFocus] = useState<{ id: string; n: number } | null>(null);
+  const [sheetFocus, setSheetFocus] = useState<{ id: SheetTab; n: number } | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setMalletteOpen(false);
+        setTerminalOpen((o) => !o);
+        return;
+      }
+      const el = e.target as HTMLElement | null;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "m" || e.key === "M") {
+        setTerminalOpen(false);
+        setMalletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [rejection, setRejection] = useState<{ reason: string; suggestion: string; text: string } | null>(null);
   const [lastUsage, setLastUsage] = useState<Usage | null>(null);
   const [lastRouting, setLastRouting] = useState<Routing | null>(null);
@@ -305,6 +335,58 @@ export function GameScreen({ initial }: { initial: GameState }) {
 
   const w = state.world;
   const c = state.character;
+
+  // Le terminal (Ctrl/⌘ K) et la mallette (M) : on y arrive de partout.
+  const go = (target: NavTarget) => {
+    const n = Date.now();
+    switch (target.to) {
+      case "recit":
+        return setTab("recit");
+      case "qg":
+        setTab("qg");
+        if (target.offer) setOfferFocus({ id: target.offer, n });
+        return;
+      case "carte":
+        setTab("monde");
+        setWorldView("carte");
+        if (target.city) setMapFocus({ id: target.city, n });
+        return;
+      case "renseignement":
+        setTab("monde");
+        return setWorldView("renseignement");
+      case "effectif":
+      case "commandement":
+        setTab("agence");
+        return setAgencyView(target.to);
+      case "archives":
+        setTab("archives");
+        if (target.folder) setArchiveFocus({ id: target.folder, n });
+        return;
+      case "fiche":
+        setSheetFocus({ id: target.tab, n });
+        if (window.matchMedia("(min-width: 1024px)").matches) {
+          setSheetPinned(true);
+          try {
+            localStorage.setItem("lucerne:fiche", "affichee");
+          } catch {
+            /* rien */
+          }
+        } else setSheetOpen(true);
+        return;
+      case "mallette":
+        return setMalletteOpen(true);
+    }
+  };
+  const atBase = w.phase === "base" && !state.mission;
+  const terminalActions = busy || state.log.length === 0
+    ? []
+    : [
+        ...state.choices.map((ch, i) => ({ id: `act:choix:${i}`, icon: String(i + 1), label: ch.label, hint: "Choix proposé par le narrateur", run: () => (setTab("recit"), play({ type: "choice", text: ch.label })) })),
+        ...(atBase && state.choices.length === 0 && !planError(state, plan)
+          ? [{ id: "act:semaine", icon: "▶", label: "Jouer la semaine", hint: plan.map((p) => ACTIVITIES[p.activity]?.label ?? p.activity).join(" · "), run: () => play({ type: "week", plan }) }]
+          : []),
+        { id: "act:export", icon: "⇩", label: "Exporter la sauvegarde", hint: "Un fichier JSON de ta partie", run: () => exportSave(state) },
+      ];
   const dayLabel = w.phase === "selection" ? `Jour ${w.day}/${SELECTION_DAYS}` : null;
   const agency = AGENCIES[c.identity.agency];
   const dateLabel = formatDate(currentDate(state));
@@ -326,6 +408,29 @@ export function GameScreen({ initial }: { initial: GameState }) {
             </p>
           </div>
           {w.phase !== "dossier" && <Hud state={state} onClick={toggleSheet} />}
+          {w.phase !== "dossier" && (
+            <>
+              <button
+                onClick={() => setTerminalOpen(true)}
+                title="Terminal : chercher et aller partout (Ctrl K)"
+                className="flex items-center gap-1.5 rounded-sm border border-line px-2 py-1.5 font-mono text-xs text-muted transition-colors hover:border-brass hover:text-ivory"
+              >
+                <span className="text-success">$_</span>
+                <kbd className="hidden text-[10px] text-faint md:inline">Ctrl K</kbd>
+              </button>
+              <button
+                onClick={() => setMalletteOpen(true)}
+                title="Mallette : inventaire (M)"
+                aria-label="Mallette"
+                className="grid h-[30px] w-9 place-items-center rounded-sm border border-line text-brass transition-colors hover:border-brass"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden>
+                  <rect x="3" y="7" width="18" height="12" rx="1.5" />
+                  <path d="M9 7V5h6v2M3 12h18M11 12v2h2v-2" />
+                </svg>
+              </button>
+            </>
+          )}
           <SettingsMenu settings={state.settings} onChange={updateSettings} disabled={busy} onExport={() => exportSave(state)} />
           <ThemeToggle />
           <button
@@ -350,18 +455,23 @@ export function GameScreen({ initial }: { initial: GameState }) {
                   <SubTabs value={worldView} onChange={setWorldView} options={[["carte", "Carte"], ["renseignement", "Renseignement"]]} />
                   {worldView === "carte" ? (
                     <div className="min-h-0 flex-1">
-                      <WorldMap state={state} />
+                      <WorldMap state={state} onChange={busy ? undefined : commit} focus={mapFocus} />
                     </div>
                   ) : (
                     <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                      <IntelBoard state={state} />
+                      <IntelBoard state={state} onChange={busy ? undefined : commit} />
                     </div>
                   )}
                 </>
               )}
               {tab === "qg" && (
                 <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                  <HQ state={state} plan={plan} setPlan={setPlan} busy={busy} onAction={(a) => play(a)} onChange={busy ? undefined : commit} onBackToStory={() => setTab("recit")} />
+                  <HQ state={state} plan={plan} setPlan={setPlan} busy={busy} onAction={(a) => play(a)} onChange={busy ? undefined : commit} onBackToStory={() => setTab("recit")} focusOffer={offerFocus} />
+                </div>
+              )}
+              {tab === "archives" && (
+                <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+                  <Archives state={state} focus={archiveFocus} />
                 </div>
               )}
               {tab === "agence" && (
@@ -558,6 +668,8 @@ export function GameScreen({ initial }: { initial: GameState }) {
             state={state}
             onChange={busy ? undefined : commit}
             onOpenPromotion={promotions.length && !busy ? () => (setSheetOpen(false), setCeremonyRank(promotions[0])) : undefined}
+            onOpenMallette={() => (setSheetOpen(false), setMalletteOpen(true))}
+            focusTab={sheetFocus}
             onAction={
               busy || state.log.length === 0
                 ? undefined
@@ -569,6 +681,15 @@ export function GameScreen({ initial }: { initial: GameState }) {
           />
         </aside>
         {sheetOpen && <div className="absolute inset-0 z-20 bg-black/50 lg:hidden" onClick={() => setSheetOpen(false)} />}
+        {malletteOpen && (
+          <Mallette
+            state={state}
+            onChange={busy ? undefined : commit}
+            onAction={busy || state.log.length === 0 ? undefined : (a) => (setTab("recit"), play(a))}
+            onClose={() => setMalletteOpen(false)}
+          />
+        )}
+        {terminalOpen && <Terminal state={state} onClose={() => setTerminalOpen(false)} go={go} actions={terminalActions} />}
         {ceremonyRank && !busy && (
           <CareerCeremony
             state={state}
@@ -873,7 +994,7 @@ function NarratorBlock({
 function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setTab: (t: MainTab) => void }) {
   const c = state.character;
   const started = state.world.phase !== "dossier";
-  const urgent = state.world.geo.threats.filter((t) => t.known && (t.capstone || t.progress >= 75)).length;
+  const urgent = state.world.geo.threats.filter((t) => threatVisible(state, t) && (t.capstone || t.progress >= 75)).length;
   const hqLabel = state.mission ? "Mission" : c.prison ? "Cellule" : c.rank === "aspirant" ? "Académie" : "QG";
   const tabs: { id: MainTab; label: string; badge?: number; hint: string }[] = [
     { id: "recit", label: "Récit", hint: "L'histoire, tes choix" },
@@ -882,6 +1003,7 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
       : []),
     { id: "monde", label: "Monde", badge: c.rank !== "prospect" ? urgent : 0, hint: "Carte et renseignement" },
     { id: "agence", label: "Agence", hint: "Le Cercle, l'effectif, ce que tu diriges" },
+    { id: "archives", label: "Archives", hint: "Tes opérations, tes rapports, tes pièces, les dossiers de l'agence" },
   ];
   if (!started) return null;
   return (

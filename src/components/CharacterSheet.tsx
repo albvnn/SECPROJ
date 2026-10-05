@@ -61,6 +61,8 @@ import type {
 } from "@/lib/game/types";
 import { PoleEmblem, SkillGlyph } from "./glyphs";
 import { DOC_LABELS, StoryDocView } from "./StoryCards";
+import { AskPerson } from "./IntelUI";
+import { Silhouette } from "./Mallette";
 import { Possessions } from "./WeekPlanner";
 import { RichText } from "./RichText";
 import { BranchSigil, SeatSigil } from "./sigils";
@@ -85,10 +87,19 @@ interface SheetProps {
   onAction?: (action: PlayerAction) => void;
   /** Ouvre la cérémonie de promotion (présent seulement quand une promotion est possible). */
   onOpenPromotion?: () => void;
+  /** Ouvre la mallette (l'inventaire en grand). */
+  onOpenMallette?: () => void;
+  /** Le terminal demande un onglet précis : `n` change à chaque demande. */
+  focusTab?: { id: SheetTab; n: number } | null;
 }
 
-export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: SheetProps) {
+export type SheetTab = Tab;
+
+export function CharacterSheet({ state, onChange, onAction, onOpenPromotion, onOpenMallette, focusTab }: SheetProps) {
   const [tab, setTab] = useState<Tab>("fiche");
+  useEffect(() => {
+    if (focusTab) setTab(focusTab.id);
+  }, [focusTab]);
   const activeRelations = state.relations.filter((r) => r.status !== "archive" && r.status !== "mort").length;
   // Pièces reçues depuis la dernière visite du carnet.
   const [seenPieces, setSeenPieces] = useState(state.pieces?.length ?? 0);
@@ -124,6 +135,7 @@ export function CharacterSheet({ state, onChange, onAction, onOpenPromotion }: S
         {tab === "affaires" && (
           <div className="space-y-8">
             <Finances state={state} />
+            {onOpenMallette && <MalletteTeaser state={state} onOpen={onOpenMallette} />}
             <Inventory state={state} onChange={onChange} onAction={onAction} />
             {RANKS[state.character.rank].order >= RANKS.aspirant.order && !state.character.prison && <Possessions state={state} onChange={onChange} compact />}
           </div>
@@ -956,7 +968,7 @@ function Relations({ state, onChange, onAction }: SheetProps) {
       </p>
       <ul className="space-y-3">
         {sorted.map((r) => (
-          <RelationCard key={r.name} r={r} day={state.world.day} onAction={onAction} onArchive={onChange && (() => setStatus(r.name, "archive"))} />
+          <RelationCard key={r.name} r={r} day={state.world.day} onAction={onAction} onArchive={onChange && (() => setStatus(r.name, "archive"))} onAsk={{ state, onChange }} />
         ))}
       </ul>
       {lost.length > 0 && (
@@ -992,11 +1004,14 @@ function RelationCard({
   day,
   onAction,
   onArchive,
+  onAsk,
 }: {
   r: Relation;
   day: number;
   onAction?: (a: PlayerAction) => void;
   onArchive?: () => void;
+  /** Lui poser une question de renseignement (coûte une faveur). */
+  onAsk?: { state: GameState; onChange?: (s: GameState) => void };
 }) {
   const [contact, setContact] = useState(false);
   const [intent, setIntent] = useState("");
@@ -1064,17 +1079,18 @@ function RelationCard({
           {(r.bond ?? 50) < 25 ? <span className="text-fail">se sent négligé</span> : r.bond ?? 50}
         </div>
       )}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] text-faint">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <span className="font-mono text-[10px] whitespace-nowrap text-faint">
           {since <= 0 ? "vu aujourd'hui" : `vu il y a ${since} j`}
           {r.cityId ? ` · ${findCity(r.cityId)?.name}` : ""}
         </span>
-        <div className="flex gap-3">
+        <div className="ml-auto flex items-center gap-3 whitespace-nowrap">
           {onArchive && !contact && (
             <button onClick={onArchive} className="text-[10px] tracking-[0.12em] text-faint uppercase hover:text-muted" title="Ne plus suivre ce lien (libère une place)">
               Archiver
             </button>
           )}
+          {reachable && !contact && onAsk && <AskPerson state={onAsk.state} source="relation" refId={r.name} onChange={onAsk.onChange} />}
           {onAction && reachable && !contact && (
             <button onClick={() => setContact(true)} className="text-[10px] font-semibold tracking-[0.12em] text-brass-soft uppercase hover:underline">
               ☎ Contacter
@@ -1131,6 +1147,34 @@ const CATEGORY_LABELS: Record<ItemCategory, string> = {
   consommable: "Consommable",
   souvenir: "Souvenir",
 };
+
+/** La mallette fermée, en miniature : ce qu'il y a dans la mousse, et de quoi l'ouvrir. */
+function MalletteTeaser({ state, onOpen }: { state: GameState; onOpen: () => void }) {
+  const carried = state.character.inventory.filter((i) => i.carried);
+  return (
+    <button
+      onClick={onOpen}
+      className="group block w-full rounded-md border border-[#3a2c1d] p-2.5 text-left shadow-lg transition-transform hover:-translate-y-0.5"
+      style={{ background: "linear-gradient(180deg, #3b2a1a, #24190f)" }}
+      title="Ouvrir la mallette (raccourci : M)"
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="font-typewriter text-[10px] tracking-[0.25em] text-[#e2c88f] uppercase">Mallette</span>
+        <span className="font-mono text-[10px] text-[#c9b48c]/80">
+          {carried.length}/{CARRY_LIMIT}
+        </span>
+      </span>
+      <span className="mt-2 grid grid-cols-8 gap-1 rounded-sm bg-[#141110] p-1.5">
+        {Array.from({ length: CARRY_LIMIT }, (_, i) => (
+          <span key={i} className="grid aspect-square place-items-center rounded-[3px] text-[#c9b48c]" style={{ boxShadow: "inset 0 2px 5px rgba(0,0,0,0.9)" }}>
+            {carried[i] ? <Silhouette category={carried[i].category} className="h-4 w-4" /> : null}
+          </span>
+        ))}
+      </span>
+      <span className="mt-2 block text-center font-typewriter text-[10px] tracking-[0.2em] text-[#e2c88f]/80 uppercase group-hover:text-[#e2c88f]">Ouvrir ▸</span>
+    </button>
+  );
+}
 
 function Inventory({ state, onChange, onAction }: SheetProps) {
   const c = state.character;

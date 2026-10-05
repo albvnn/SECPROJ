@@ -6,8 +6,9 @@ import { AGENCIES, findBranch, findSeat } from "./agencies";
 import { findGadget, GADGETS } from "./gadgets";
 import { chance, pick, pickWeighted, randInt, shuffle, uid, type Rng } from "./rng";
 import { bestSkill, isAvailable, OPERATIVE_TRAITS, operativeSkill } from "./roster";
-import { DIFFICULTIES, DIFFICULTY_IDS, MISSION_IMPORTANCE, MISSION_RESULTS, RANKS, SKILLS, can, formatEuros, missionBonus, missionMerit, POINTS_PER_MISSION } from "./rules";
+import { DIFFICULTIES, DIFFICULTY_IDS, MISSION_IMPORTANCE, MISSION_RESULTS, RANKS, SKILLS, can, formatEuros, formatMerit, missionBonus, missionMerit, POINTS_PER_MISSION } from "./rules";
 import type {
+  MissionRecord,
   AgencyId,
   Approach,
   CheckOutcome,
@@ -49,8 +50,18 @@ interface Ctx {
   agency: string;
 }
 
-const t = (s: string, c: Ctx) =>
-  s
+/** « de les services russes » → « des services russes », « à Le Caire » → « au Caire ». */
+function contract(prep: string, value: string): string {
+  const m = /^(les|le|Le|Les) (.*)$/.exec(value);
+  if (!m) return `${prep} ${value}`;
+  const plural = m[1].toLowerCase() === "les";
+  const art = prep === "de" ? (plural ? "des" : "du") : plural ? "aux" : "au";
+  return `${art} ${m[2]}`;
+}
+
+const t = (raw: string, c: Ctx) =>
+  raw
+    .replace(/\b(de|à) \{(city|country|target|faction|other)\}/g, (_, prep: string, key: keyof Ctx) => contract(prep, c[key]))
     .replace(/\{city\}/g, c.city)
     .replace(/\{country\}/g, c.country)
     .replace(/\{target\}/g, c.target)
@@ -775,6 +786,127 @@ export function requisitionBudget(state: GameState): number {
   return Math.max(3000, RANKS[state.character.rank].fundsCap);
 }
 
+/* ------------------------------------------------------------------ */
+/* Dotation : les moyens qu'on t'accorde pour une mission              */
+/* ------------------------------------------------------------------ */
+
+export interface AllowanceLine {
+  label: string;
+  detail: string;
+  tone: "base" | "plus" | "minus";
+}
+
+export interface Allowance {
+  /** Budget de réquisition (gadgets du laboratoire). */
+  budget: number;
+  /** Fonds d'opération confiés pour la mission. */
+  funds: number;
+  gadgetSlots: number;
+  teamSize: number;
+  /** Renseignement de départ. */
+  intel: number;
+  /** Confiance de la hiérarchie (×0,6 à ×1,35) : elle dépend de ta réputation, de ton mérite et de tes blâmes. */
+  trust: number;
+  lines: AllowanceLine[];
+}
+
+const IMPORTANCE_MEANS: Record<MissionImportance, number> = { locale: 0.6, regionale: 1, continentale: 1.6, mondiale: 2.5 };
+
+/**
+ * Ce que l'agence t'accorde pour cette mission : selon ton grade, la confiance qu'on te fait (ton potentiel),
+ * ton rôle (ton siège, ta Station), l'importance de l'affaire et la satisfaction des gouvernements.
+ */
+export function missionAllowance(state: GameState, offer: MissionOffer): Allowance {
+  const c = state.character;
+  const rank = RANKS[c.rank];
+  const lines: AllowanceLine[] = [];
+  const youth = offer.kind === "jeunesse";
+  const funding = fundingFactor(state.world.geo, c.identity.agency);
+
+  // Le grade fixe la base.
+  let budget = requisitionBudget(state);
+  let funds = Math.max(1000, rank.fundsCap);
+  let slots = maxGadgets(state);
+  let team = youth ? 1 : maxTeam(c.rank);
+  lines.push({ label: `Grade : ${rank.label}`, detail: `${formatEuros(budget)} de réquisition, ${slots} emplacement${slots > 1 ? "s" : ""}, ${team} équipier${team > 1 ? "s" : ""}`, tone: "base" });
+
+  // Le potentiel : ce que la hiérarchie pense de toi.
+  const trust = Math.max(0.6, Math.min(1.35, 0.8 + c.reputation / 250 + Math.min(0.15, c.merit / 100) - c.blames * 0.1));
+  if (Math.abs(trust - 1) >= 0.05)
+    lines.push({
+      label: trust > 1 ? "La hiérarchie croit en toi" : "La hiérarchie se méfie",
+      detail: `moyens ×${trust.toFixed(2)} (réputation ${c.reputation}, mérite ${formatMerit(c.merit)}${c.blames ? `, ${c.blames} blâme${c.blames > 1 ? "s" : ""}` : ""})`,
+      tone: trust > 1 ? "plus" : "minus",
+    });
+
+  // L'importance de l'affaire.
+  const weight = youth ? 0.5 : IMPORTANCE_MEANS[offer.importance];
+  if (weight !== 1) lines.push({ label: `Mission ${youth ? "Jeunesse" : MISSION_IMPORTANCE[offer.importance].label.toLowerCase()}`, detail: `moyens ×${weight}`, tone: weight > 1 ? "plus" : "minus" });
+  if (!youth && (offer.importance === "continentale" || offer.importance === "mondiale")) {
+    team += 1;
+    lines.push({ label: "Affaire d'envergure", detail: "un équipier de plus", tone: "plus" });
+  }
+  if (offer.importance === "mondiale") {
+    slots += 1;
+    lines.push({ label: "Priorité absolue", detail: "un emplacement de gadget de plus", tone: "plus" });
+  }
+
+  // Le rôle : ton siège, ta Station.
+  const tpl = findTemplate(offer.template);
+  const seat = findSeat(c.identity.agency, c.seat);
+  if (seat && tpl && tpl.skills.some((k) => seat.specialty.includes(k))) {
+    slots += 1;
+    lines.push({ label: `Mission de ton siège (${seat.name})`, detail: "un emplacement de plus : on te fait confiance sur ton terrain", tone: "plus" });
+  }
+  let intel = (state.command.intelStock ?? 0);
+  if (state.command.intelStock) lines.push({ label: "Préparation (Branches, rivaux)", detail: `+${state.command.intelStock} renseignement`, tone: "plus" });
+  const stationRegion = findCountry(findCity(c.station ?? state.command.station?.cityId ?? "")?.country ?? "")?.region;
+  if (stationRegion && stationRegion === offer.region) {
+    funds = Math.round(funds * 1.2);
+    intel += 1;
+    lines.push({ label: "Terrain de ta Station", detail: "+1 renseignement, fonds +20 % (planques, voitures, contacts locaux)", tone: "plus" });
+  }
+  const assets = state.command.assets.filter((a) => a.status === "actif" && findCountry(findCity(a.cityId)?.country ?? "")?.region === offer.region).length;
+  if (assets) {
+    intel += Math.min(2, assets);
+    lines.push({ label: "Tes informateurs sur place", detail: `+${Math.min(2, assets)} renseignement`, tone: "plus" });
+  }
+  if (stationHelps(state, offer.region, "ecoutes")) {
+    intel += 1;
+    lines.push({ label: "Salle des écoutes", detail: "+1 renseignement", tone: "plus" });
+  }
+  if (state.knowledge?.recon?.[offer.id]) {
+    intel += 1;
+    lines.push({ label: "Repérages", detail: "+1 renseignement, étapes connues", tone: "plus" });
+  }
+  const studied = (offer.threat && state.knowledge?.threats?.[offer.threat]) || 0;
+  if (studied) {
+    intel += studied;
+    lines.push({ label: "Menace étudiée", detail: `+${studied} renseignement`, tone: "plus" });
+  }
+  if (offer.kind === "conjointe" && offer.other) {
+    budget = Math.round(budget * 1.25);
+    lines.push({ label: `Opération conjointe avec ${AGENCIES[offer.other].name}`, detail: "réquisition +25 % (frais partagés)", tone: "plus" });
+  }
+  if (offer.kind === "contre_espionnage") {
+    funds = Math.round(funds * 0.8);
+    lines.push({ label: "Contre-espionnage", detail: "fonds −20 % : rien ne doit laisser de trace", tone: "minus" });
+  }
+
+  // Les gouvernements paient.
+  if (Math.abs(funding - 1) >= 0.03) lines.push({ label: "Satisfaction des gouvernements", detail: `moyens ×${funding.toFixed(2)}`, tone: funding > 1 ? "plus" : "minus" });
+  const factor = trust * weight * funding;
+  return {
+    budget: Math.round((budget * factor) / 100) * 100,
+    funds: Math.round((funds * factor) / 100) * 100,
+    gadgetSlots: slots,
+    teamSize: team,
+    intel: Math.min(6, intel),
+    trust,
+    lines,
+  };
+}
+
 function shiftDifficulty(d: Difficulty, steps: number): Difficulty {
   const i = DIFFICULTY_IDS.indexOf(d);
   return DIFFICULTY_IDS[Math.max(0, Math.min(DIFFICULTY_IDS.length - 1, i + steps))];
@@ -822,6 +954,50 @@ function buildDilemma(ctx: Ctx, hasOther: boolean, rng: Rng): MissionNode {
     status: "a_venir",
     attempts: 0,
   };
+}
+
+/** Le contexte d'écriture d'une mission (ville, cible, faction, couverture). */
+function offerCtx(state: GameState, offer: MissionOffer, rng: Rng, cover?: string): Ctx {
+  const tpl = findTemplate(offer.template)!;
+  const city = findCity(offer.cityId)!;
+  return {
+    city: city.name,
+    country: findCountry(city.country)?.name ?? "",
+    target: offer.target,
+    faction: findFaction(offer.faction)?.name ?? "l'ennemi",
+    cover: cover ?? pick(tpl.covers, rng),
+    other: offer.other ? AGENCIES[offer.other].name : "",
+    agency: AGENCIES[state.character.identity.agency].name,
+  };
+}
+
+/** Repérages : les étapes réelles d'une mission proposée, établies d'avance (la couverture reste à choisir). */
+export function scoutOffer(state: GameState, offerId: string, rng: Rng = Math.random): MissionNode[] | null {
+  const offer = state.offers.find((o) => o.id === offerId);
+  if (!offer) return null;
+  return buildNodes(offer, offerCtx(state, offer, rng, "{cover}"), rng);
+}
+
+/** Remplace la couverture laissée en suspens par les repérages. */
+function withCover(n: MissionNode, cover: string): MissionNode {
+  const f = (x: string) => x.replace(/\{cover\}/g, cover);
+  return {
+    ...n,
+    title: f(n.title),
+    situation: f(n.situation),
+    approaches: n.approaches.map((a) => ({ ...a, label: f(a.label) })),
+    ...(n.alt ? { alt: withCover(n.alt, cover) } : {}),
+  };
+}
+
+/** Une fois partie, une mission n'a plus besoin de ses repérages ni de l'étude de sa menace. */
+function forgetOffer(k: GameState["knowledge"], offerId: string, threat?: string): GameState["knowledge"] {
+  if (!k) return k;
+  const recon = { ...k.recon };
+  delete recon[offerId];
+  const threats = { ...k.threats };
+  if (threat) delete threats[threat];
+  return { ...k, recon, threats };
 }
 
 function buildNodes(offer: MissionOffer, ctx: Ctx, rng: Rng): MissionNode[] {
@@ -897,20 +1073,21 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
   const agency = c.identity.agency;
   const day = state.world.day;
 
+  const allowance = missionAllowance(state, offer);
   // Équipe : imposée pour un Agent, choisie au-delà.
-  const allowed = offer.kind === "jeunesse" ? 1 : maxTeam(c.rank);
+  const allowed = allowance.teamSize;
   const team = (offersAreAssigned(c.rank) || offer.kind === "jeunesse" ? suggestedTeam(state, offer, rng) : teamIds)
     .filter((id) => state.roster.some((o) => o.id === id && isAvailable(o, day)))
     .slice(0, allowed);
 
   // Équipement : réquisition dans la limite du budget et du nombre d'emplacements.
   const catalog = availableGadgets(state);
-  const budget = Math.round(requisitionBudget(state) * fundingFactor(state.world.geo, agency));
+  const budget = allowance.budget;
   let spent = 0;
   const gadgets = gadgetIds
     .map((id) => catalog.find((g) => g.id === id))
     .filter((g): g is NonNullable<typeof g> => Boolean(g))
-    .slice(0, maxGadgets(state))
+    .slice(0, allowance.gadgetSlots)
     .filter((g) => (spent + g.cost <= budget ? ((spent += g.cost), true) : false));
   const items: Item[] = gadgets.map((g) => ({
     name: g.name,
@@ -923,17 +1100,8 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
     gadget: g.id,
   }));
 
-  const tpl = findTemplate(offer.template)!;
   const city = findCity(offer.cityId)!;
-  const ctx: Ctx = {
-    city: city.name,
-    country: findCountry(city.country)?.name ?? "",
-    target: offer.target,
-    faction: findFaction(offer.faction)?.name ?? "l'ennemi",
-    cover: pick(tpl.covers, rng),
-    other: offer.other ? AGENCIES[offer.other].name : "",
-    agency: AGENCIES[agency].name,
-  };
+  const ctx = offerCtx(state, offer, rng);
 
   // Légende : une fausse identité qui n'est pas grillée dans ce pays.
   const legend = legendId ? c.legends.find((l) => l.id === legendId && legendUsableIn(l, city.country)) : undefined;
@@ -944,11 +1112,11 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
   const travelDays = Math.ceil(journey.hours / 24);
 
   // Renseignement de départ : préparation, informateurs et antenne de la région.
-  const assets = state.command.assets.filter((a) => a.status === "actif" && findCity(a.cityId) && findCountry(findCity(a.cityId)!.country)?.region === offer.region).length;
-  const stationBonus = stationHelps(state, offer.region, "ecoutes") ? 1 : 0;
-  const intel = Math.min(5, (state.command.intelStock ?? 0) + Math.min(2, assets) + stationBonus);
 
-  const nodes = buildNodes(offer, ctx, rng);
+  // Repérages faits d'avance : les étapes sont celles qu'on a étudiées.
+  const scouted = state.knowledge?.recon?.[offer.id];
+  const nodes = scouted ? scouted.map((n) => withCover(n, ctx.cover)) : buildNodes(offer, ctx, rng);
+  const studied = (offer.threat && state.knowledge?.threats?.[offer.threat]) || 0;
   const country = findCountry(city.country);
   const heat = heatOf(c, city.country);
   // En territoire hostile, il faut entrer clandestinement.
@@ -981,9 +1149,10 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
     current: 0,
     exposure: 0,
     alert: Math.round(heat / 3),
-    intel,
+    intel: allowance.intel,
     startDay: day + travelDays,
     legend: legend?.id,
+    offerId: offer.id,
     threat: offer.threat,
     nemesis: offer.nemesis,
     turns: 0,
@@ -998,6 +1167,8 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
     ...(gadgets.length ? [`Réquisition du laboratoire : ${gadgets.map((g) => g.name).join(", ")} (${formatEuros(spent)})`] : []),
     ...(journey.km ? [`Voyage : ${journey.km} km, ${journey.hours} h${journey.jetlag ? `, décalage de ${journey.jetlag} h` : ""} (fatigue +${journey.fatigue})`] : []),
     ...(legend ? [`Légende : ${legend.name}`] : []),
+    ...(scouted ? ["Repérages : les étapes sont connues d'avance (+1 renseignement)"] : []),
+    ...(studied ? [`Menace étudiée : +${studied} renseignement`] : []),
     ...(heat >= 30 ? [`Tu es ${heatLabel(heat)} dans ce pays : l'alerte part de ${Math.round(heat / 3)}`] : []),
   ];
   return {
@@ -1009,7 +1180,7 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
       character: {
         ...c,
         inventory: [...c.inventory, ...items],
-        missionFunds: Math.max(0, Math.round(RANKS[c.rank].fundsCap * fundingFactor(state.world.geo, agency)) - spent),
+        missionFunds: Math.max(0, allowance.funds - spent),
         fatigue: Math.min(100, (c.fatigue ?? 0) + journey.fatigue),
       },
       world: {
@@ -1021,6 +1192,7 @@ export function startMission(state: GameState, offerId: string, teamIds: string[
         chapter: mission.name,
       },
       command: { ...state.command, intelStock: 0, labFavor: 0 },
+      knowledge: forgetOffer(state.knowledge, offer.id, offer.threat),
       scene: null,
       updatedAt: Date.now(),
     },
@@ -1568,8 +1740,33 @@ function finishMission(state: GameState, rng: Rng): { state: GameState; notices:
     },
   ];
 
+  // Aux archives.
+  const record: MissionRecord = {
+    id: m.id,
+    ...(m.offerId ? { offerId: m.offerId } : {}),
+    name: m.name,
+    kind: m.kind,
+    importance: m.importance,
+    result,
+    city: city?.name ?? "",
+    country: findCountry(city?.country ?? "")?.name ?? "",
+    region: m.region,
+    faction: findFaction(m.faction)?.name ?? "",
+    target: m.target,
+    objective: m.objective,
+    cover: m.cover,
+    team: m.team.map((id) => state.roster.find((o) => o.id === id)).filter((o) => o !== undefined).map((o) => (o.codename ? `« ${o.codename} » ${o.name}` : o.name)),
+    startDay: m.startDay,
+    endDay: w.day,
+    steps: m.nodes.map((n) => ({ title: n.title, status: n.status, ...(n.key ? { key: true } : {}), ...(n.type === "secondaire" ? { secondary: true } : {}), ...(n.type === "dilemme" ? { dilemma: true } : {}) })),
+    report: [...lines.slice(1), ...notices],
+    exposure: m.exposure,
+    ...(m.blown ? { blown: true } : {}),
+    ...(m.nemesis ? { nemesis: geo.nemeses.find((n) => n.id === m.nemesis)?.name } : {}),
+  };
+
   return {
-    state: { ...state, character: c, world: w, roster, duties, mission: null, lastMission: { ...m, stage: "terminee", result } },
+    state: { ...state, character: c, world: w, roster, duties, mission: null, lastMission: { ...m, stage: "terminee", result }, missionLog: [...(state.missionLog ?? []), record].slice(-80) },
     notices,
     lines,
     result,
