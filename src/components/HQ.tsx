@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ActivityChoice, GameState, PlayerAction } from "@/lib/game/types";
 import { Debrief, MissionsList, MissionTrack, Preparation } from "./Operations";
 import { Agenda, Duties, PrisonBanner, StatusStrip, WeekSlots } from "./WeekPlanner";
@@ -17,6 +17,7 @@ export function HQ({
   onAction,
   onChange,
   onBackToStory,
+  focusOffer,
 }: {
   state: GameState;
   plan: ActivityChoice[];
@@ -25,8 +26,13 @@ export function HQ({
   onAction: (a: PlayerAction) => void;
   onChange?: (s: GameState) => void;
   onBackToStory: () => void;
+  /** Le terminal demande la préparation d'une mission. */
+  focusOffer?: { id: string; n: number } | null;
 }) {
   const [preparing, setPreparing] = useState<string | null>(null);
+  useEffect(() => {
+    if (focusOffer) setPreparing(focusOffer.id);
+  }, [focusOffer]);
   const offer = state.offers.find((o) => o.id === preparing) ?? null;
   const atBase = state.world.phase === "base" && !state.mission;
   const prison = state.character.prison;

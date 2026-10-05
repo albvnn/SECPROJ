@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { clearance, clearanceDef } from "@/lib/game/intel";
 import { SOURCE_KINDS, TOPICS, fileRequest, gradeLabel, questionsFor, sourceOffers, targetLabel } from "@/lib/game/sources";
 import type { GameState, IntelRequestKind, SourceKind } from "@/lib/game/types";
@@ -19,6 +20,42 @@ export function Classified({ need, children, action }: { need: number; children?
   );
 }
 
+/**
+ * Un panneau flottant ancré sous son bouton, rendu hors du flux (portail) pour ne pas être
+ * rogné par les zones qui défilent (la fiche, les listes).
+ */
+function Popover({ anchor, width, onClose, children }: { anchor: React.RefObject<HTMLElement | null>; width: number; onClose: () => void; children: React.ReactNode }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      if (!r) return;
+      const w = Math.min(width, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+      const below = r.bottom + 4;
+      setPos({ top: below + 320 > window.innerHeight && r.top > 340 ? Math.max(8, r.top - 4 - 320) : below, left });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchor, width]);
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[60]" onClick={onClose} />
+      {pos && (
+        <div className="fixed z-[61] rounded-sm border border-line-strong bg-panel p-2 text-left shadow-2xl" style={{ top: pos.top, left: pos.left, width: Math.min(width, window.innerWidth - 16) }}>
+          {children}
+        </div>
+      )}
+    </>,
+    document.body,
+  );
+}
+
 /** Demander un renseignement : le bouton ouvre la liste des sources qui pourraient répondre. */
 export function RequestButton({
   state,
@@ -34,11 +71,12 @@ export function RequestButton({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
   const pending = state.knowledge.requests.find((r) => r.kind === kind && r.target === target);
   if (pending)
     return (
-      <span className="text-[10px] tracking-[0.12em] whitespace-nowrap text-brass-soft uppercase" title={`${pending.sourceLabel} · réponse au jour ${pending.readyDay}`}>
-        ⌛ {pending.sourceLabel.split(" ")[0]} · J{pending.readyDay}
+      <span className="inline-flex max-w-[14rem] items-center gap-1 text-[10px] tracking-[0.12em] whitespace-nowrap text-brass-soft uppercase" title={`${pending.sourceLabel} · réponse au jour ${pending.readyDay}`}>
+        ⌛ <span className="truncate">{pending.sourceLabel}</span> · J{pending.readyDay}
       </span>
     );
   const offers = sourceOffers(state, kind, target);
@@ -46,6 +84,7 @@ export function RequestButton({
   return (
     <span className="relative inline-flex">
       <button
+        ref={button}
         disabled={!onChange || !offers.length}
         title={available ? `${TOPICS[kind].gives} ${available} source${available > 1 ? "s" : ""} disponible${available > 1 ? "s" : ""}.` : offers[0]?.blocker ?? "Personne ne peut répondre."}
         onClick={() => setOpen((o) => !o)}
@@ -57,15 +96,12 @@ export function RequestButton({
         {available > 1 ? <span className="ml-1 opacity-70">·{available}</span> : null}
       </button>
       {open && onChange && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full right-0 z-50 mt-1 w-[22rem] max-w-[85vw] rounded-sm border border-line-strong bg-panel p-2 text-left shadow-2xl">
-            <p className="px-1 pb-1.5 text-[10px] tracking-[0.15em] text-muted uppercase">
-              {TOPICS[kind].label} · {targetLabel(state, kind, target)}
-            </p>
-            <SourceList state={state} kind={kind} target={target} onChange={(s) => (setOpen(false), onChange(s))} compact />
-          </div>
-        </>
+        <Popover anchor={button} width={352} onClose={() => setOpen(false)}>
+          <p className="px-1 pb-1.5 text-[10px] tracking-[0.15em] text-muted uppercase">
+            {TOPICS[kind].label} · {targetLabel(state, kind, target)}
+          </p>
+          <SourceList state={state} kind={kind} target={target} onChange={(s) => (setOpen(false), onChange(s))} compact />
+        </Popover>
       )}
     </span>
   );
@@ -162,6 +198,7 @@ export function ClearanceBadge({ state }: { state: GameState }) {
 export function AskPerson({ state, source, refId, onChange }: { state: GameState; source: SourceKind; refId: string; onChange?: (s: GameState) => void }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const pending = state.knowledge.requests.find((r) => r.source === source && r.sourceRef === refId);
   if (!onChange) return null;
   if (pending)
@@ -173,49 +210,46 @@ export function AskPerson({ state, source, refId, onChange }: { state: GameState
   const questions = open ? questionsFor(state, source, refId) : [];
   return (
     <span className="relative inline-flex">
-      <button onClick={() => setOpen((o) => !o)} className="text-[10px] font-semibold tracking-[0.12em] text-brass-soft uppercase hover:underline">
+      <button ref={button} onClick={() => setOpen((o) => !o)} className="text-[10px] font-semibold tracking-[0.12em] text-brass-soft uppercase hover:underline">
         ⌕ Lui demander…
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full right-0 z-50 mt-1 w-80 max-w-[85vw] rounded-sm border border-line-strong bg-panel p-2 text-left shadow-2xl">
-            {questions.length === 0 ? (
-              <p className="px-1 text-xs text-muted">Rien qu'il puisse te dire en ce moment : il ne sait que ce qui se passe chez lui, et le lien doit être solide.</p>
-            ) : (
-              <ul className="max-h-72 space-y-1 overflow-y-auto">
-                {questions.map((q) => {
-                  const offer = sourceOffers(state, q.kind, q.target).find((o) => o.source === source && o.ref === refId)!;
-                  return (
-                    <li key={`${q.kind}:${q.target}`}>
-                      <button
-                        onClick={() => {
-                          try {
-                            setError(null);
-                            onChange(fileRequest(state, q.kind, q.target, { source, ref: refId }));
-                            setOpen(false);
-                          } catch (e) {
-                            setError(e instanceof Error ? e.message : "Impossible.");
-                          }
-                        }}
-                        className="w-full rounded-sm border border-line px-2 py-1 text-left hover:border-brass/60"
-                      >
-                        <span className="block truncate text-xs text-ivory/90">{q.label}</span>
-                        <span className="text-[10px] text-muted">
-                          {offer.costText} · {offer.days} j ·{" "}
-                          <span style={{ color: GRADE_COLOR[offer.grade[0]] }} title={gradeLabel(offer.grade)}>
-                            {offer.grade}
-                          </span>
+        <Popover anchor={button} width={320} onClose={() => setOpen(false)}>
+          {questions.length === 0 ? (
+            <p className="px-1 text-xs text-muted">Rien qu'il puisse te dire en ce moment : il ne sait que ce qui se passe chez lui, et le lien doit être solide.</p>
+          ) : (
+            <ul className="max-h-72 space-y-1 overflow-y-auto">
+              {questions.map((q) => {
+                const offer = sourceOffers(state, q.kind, q.target).find((o) => o.source === source && o.ref === refId)!;
+                return (
+                  <li key={`${q.kind}:${q.target}`}>
+                    <button
+                      onClick={() => {
+                        try {
+                          setError(null);
+                          onChange(fileRequest(state, q.kind, q.target, { source, ref: refId }));
+                          setOpen(false);
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Impossible.");
+                        }
+                      }}
+                      className="w-full rounded-sm border border-line px-2 py-1 text-left hover:border-brass/60"
+                    >
+                      <span className="block truncate text-xs text-ivory/90">{q.label}</span>
+                      <span className="text-[10px] text-muted">
+                        {offer.costText} · {offer.days} j ·{" "}
+                        <span style={{ color: GRADE_COLOR[offer.grade[0]] }} title={gradeLabel(offer.grade)}>
+                          {offer.grade}
                         </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {error && <p className="mt-1 text-[10px] text-fail">{error}</p>}
-          </div>
-        </>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {error && <p className="mt-1 text-[10px] text-fail">{error}</p>}
+        </Popover>
       )}
     </span>
   );

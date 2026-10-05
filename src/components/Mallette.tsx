@@ -167,7 +167,7 @@ export function Mallette({
             </div>
             <div
               {...dropZone("case")}
-              className={`grid grid-cols-2 gap-3 rounded-md p-3 transition-colors sm:grid-cols-4 ${over === "case" ? "ring-2 ring-brass/60" : ""}`}
+              className={`grid grid-cols-4 gap-2 rounded-md p-2 transition-colors sm:gap-3 sm:p-3 ${over === "case" ? "ring-2 ring-brass/60" : ""}`}
               style={{
                 background: "radial-gradient(circle at 30% 20%, #26211b, #141110)",
                 backgroundImage: "radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), radial-gradient(circle at 30% 20%, #26211b, #141110)",
@@ -187,7 +187,7 @@ export function Mallette({
                     onClick={() => setSelected(x.index)}
                   />
                 ) : (
-                  <div key={`e${slot}`} className="grid aspect-[4/3] place-items-center rounded-md text-[10px] tracking-[0.2em] text-[#c9b48c]/25 uppercase" style={{ boxShadow: "inset 0 3px 10px rgba(0,0,0,0.85), inset 0 -1px 0 rgba(255,255,255,0.04)" }}>
+                  <div key={`e${slot}`} className="grid aspect-square place-items-center sm:aspect-[4/3] rounded-md text-[10px] tracking-[0.2em] text-[#c9b48c]/25 uppercase" style={{ boxShadow: "inset 0 3px 10px rgba(0,0,0,0.85), inset 0 -1px 0 rgba(255,255,255,0.04)" }}>
                     vide
                   </div>
                 );
@@ -286,7 +286,7 @@ function Cutout({
       onDragEnd={onDragEnd}
       onClick={onClick}
       title={item.description}
-      className={`group relative flex aspect-[4/3] flex-col items-center justify-center gap-1 rounded-md px-2 text-center transition-transform ${on ? "-translate-y-0.5" : "hover:-translate-y-0.5"} ${spent ? "opacity-40" : ""}`}
+      className={`group relative flex aspect-square flex-col sm:aspect-[4/3] items-center justify-center gap-1 rounded-md px-2 text-center transition-transform ${on ? "-translate-y-0.5" : "hover:-translate-y-0.5"} ${spent ? "opacity-40" : ""}`}
       style={{
         background: "linear-gradient(180deg, #2b2620, #1d1915)",
         boxShadow: on ? `inset 0 3px 10px rgba(0,0,0,0.8), 0 0 0 2px ${pole}` : "inset 0 3px 10px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.04)",
@@ -295,7 +295,9 @@ function Cutout({
       <span style={{ color: pole }}>
         <Silhouette category={item.category} />
       </span>
-      <span className="line-clamp-2 text-[11px] leading-tight text-[#e9e4d8]/90">{item.name}</span>
+      <span className="hidden sm:block">
+        <span className="line-clamp-2 text-[11px] leading-tight text-[#e9e4d8]/90">{item.name}</span>
+      </span>
       {item.charges !== undefined && (
         <span className="flex gap-0.5" aria-label={`${item.charges} utilisations`}>
           {Array.from({ length: Math.min(9, Math.max(item.charges, 1)) }, (_, i) => (

@@ -2,7 +2,7 @@
 
 import { geoGraticule10, geoInterpolate, geoNaturalEarth1, geoPath } from "d3-geo";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { feature, merge } from "topojson-client";
 import type { GeometryCollection, Topology } from "topojson-specification";
 import world from "world-atlas/countries-110m.json";
@@ -161,7 +161,7 @@ const RELATION_COLORS: Record<string, string> = {
 /* Carte                                                               */
 /* ------------------------------------------------------------------ */
 
-export function WorldMap({ state, onChange }: { state: GameState; onChange?: (s: GameState) => void }) {
+export function WorldMap({ state, onChange, focus }: { state: GameState; onChange?: (s: GameState) => void; focus?: { id: string; n: number } | null }) {
   const { shapes, project, farEast, graticule, sphere, route } = useShapes();
   const lvl = clearance(state);
   const watched = useMemo(() => knownRegions(state), [state]);
@@ -211,6 +211,13 @@ export function WorldMap({ state, onChange }: { state: GameState; onChange?: (s:
     const [px, py] = project(lat, lon);
     setView({ k, x: W / 2 - px * k, y: H / 2 - py * k });
   };
+  // Le terminal demande une ville : on la sélectionne et on centre dessus.
+  useEffect(() => {
+    const city = focus ? findCity(focus.id) : undefined;
+    if (!city) return;
+    setSel({ kind: "city", id: city.id });
+    centerOn(city.lat, city.lon, 3.5);
+  }, [focus]);
   // Itinéraires : vers la mission en cours, ou vers les missions proposées.
   const routes = here && !state.mission ? state.offers.map((o) => ({ id: o.id, to: findCity(o.cityId), assigned: o.assigned })).filter((r) => r.to && r.to.id !== here.id) : [];
   const important = (info: CityInfo) => info.player || info.station || info.mission || info.offers.length > 0 || info.threats.length > 0 || info.hq.includes(agency);

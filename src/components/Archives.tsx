@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AGENCIES, AGENCY_IDS } from "@/lib/game/agencies";
 import { circleVisible, clearance, clearanceDef, factionOpen, operativeKnown } from "@/lib/game/intel";
 import { OPERATIVE_TRAITS, operativeTitle } from "@/lib/game/roster";
@@ -52,12 +52,25 @@ const STEP_COLOR: Record<NodeStatus, string> = {
   echoue: "#b4483c",
 };
 
-export function Archives({ state }: { state: GameState }) {
+/** Une demande d'ouverture venue d'ailleurs (le terminal) : `n` change à chaque demande. */
+export interface Focus {
+  id: string;
+  n: number;
+}
+
+export function Archives({ state, focus }: { state: GameState; focus?: Focus | null }) {
   const drawers = useMemo(() => buildDrawers(state), [state]);
   const [openDrawer, setOpenDrawer] = useState(drawers.find((d) => d.folders.length)?.id ?? "operations");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const lvl = clearance(state);
+  useEffect(() => {
+    if (!focus) return;
+    const drawer = drawers.find((d) => d.folders.some((f) => f.id === focus.id));
+    if (drawer) setOpenDrawer(drawer.id);
+    setFolderId(focus.id);
+    setQuery("");
+  }, [focus]);
   const agency = AGENCIES[state.character.identity.agency];
   const q = query.trim().toLowerCase();
   const matches = q ? drawers.flatMap((d) => d.folders.filter((f) => f.need <= lvl && `${f.title} ${f.meta} ${f.text}`.toLowerCase().includes(q)).map((f) => ({ ...f, drawer: d.label }))) : [];
@@ -252,6 +265,14 @@ function MissionFolder({ r, docs }: { r: MissionRecord; docs: StoryDoc[] }) {
       )}
       <Attachments docs={docs} />
     </div>
+  );
+}
+
+/** L'index du classeur, pour la recherche du terminal : seulement ce que tu as le droit de lire. */
+export function archiveIndex(state: GameState) {
+  const lvl = clearance(state);
+  return buildDrawers(state).flatMap((d) =>
+    d.folders.filter((f) => f.need <= lvl).map((f) => ({ id: f.id, title: f.title, meta: f.meta, text: f.text, drawer: d.id, drawerLabel: d.label })),
   );
 }
 
