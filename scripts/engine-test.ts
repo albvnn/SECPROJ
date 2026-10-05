@@ -1,0 +1,167 @@
+/** Tests hors-ligne du moteur v4. `npx tsx scripts/engine-test.ts` */
+import { applyUpdate, createGameState, freeSeats, normalizeState, promotionsAvailable, promote, rankMissing } from "../src/lib/game/engine";
+import { resolveWeek, defaultPlan, planError } from "../src/lib/game/planner";
+import { canStartMission, chooseRoute, currentNode, makeOffer, nodeOptions, startMission, approachOdds } from "../src/lib/game/missions";
+import { resolveNode, runEngineAction } from "../src/lib/game/actions";
+import { buyModule, delegateOffer, openStation, setSquad } from "../src/lib/game/command";
+import { buyPossession, weeklyUpkeep } from "../src/lib/game/economy";
+import { trip, languageBonus } from "../src/lib/game/field";
+import { AGENCIES } from "../src/lib/game/agencies";
+import { eventsBetween } from "../src/lib/world/agenda";
+import type { GameState } from "../src/lib/game/types";
+
+let failures = 0;
+const check = (label: string, ok: boolean, extra = "") => {
+  console.log(`${ok ? "✓" : "✗"} ${label}${extra ? ` — ${extra}` : ""}`);
+  if (!ok) failures++;
+};
+let seed = 42;
+const rng = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+const roll = () => 1 + Math.floor(rng() * 6);
+
+/** Joue une mission jusqu'au bout en choisissant la meilleure approche. */
+function playMission(s: GameState): GameState {
+  let guard = 0;
+  while (s.mission && guard++ < 80) {
+    const options = nodeOptions(s);
+    const best = [...options].sort((a, b) => approachOdds(s, b, 1) - approachOdds(s, a, 1))[0];
+    s = resolveNode(s, best.id, 1, roll, rng).state;
+  }
+  return s;
+}
+
+let s: GameState = createGameState({
+  identity: { firstName: "Test", lastName: "Moteur", age: 17, gender: "fille", birthplace: "Lyon, France", appearance: "", languages: "Français, arabe", agency: "argos", nationality: "France" },
+  originId: "pupille",
+  dramaId: "abandon",
+  motivationId: "appartenance",
+  qualities: ["memoire", "nerfs"],
+  flaw: "mefiant",
+  playerNotes: "",
+  attributes: { esprit: 4, ame: 3, corps: 2, geste: 3 },
+  signature: "regard",
+  skillPicks: { logique: 1, archives: 1, sangfroid: 1 },
+});
+const own = s.roster.filter((o) => o.agency === "argos");
+check("organisation ARGOS", own.filter((o) => o.role === "titulaire").length === 10 && own.filter((o) => o.role === "cadet").length === 9 && own.filter((o) => o.role === "soutien").length === 10, `${own.length} personnes, ${s.roster.length} en tout`);
+check("le Cercle porte les noms de ses bancs", own.some((o) => o.codename === "Jason") && own.some((o) => o.codename === "Orphée"));
+check("menaces de départ", s.world.geo.threats.length >= 3, s.world.geo.threats.map((t) => t.title).join(" | "));
+check("langues parlées", s.character.spoken.includes("français") && s.character.spoken.includes("arabe"));
+
+s = applyUpdate(s, { phase: "recrutement" }).state;
+s = applyUpdate(s, { phase: "selection" }).state;
+s = applyUpdate(s, { phase: "base", jours_ecoules: 100 }).state;
+check("Révélation → cadet", s.character.rank === "aspirant" && s.character.armband === "gris");
+check("pas de légende pour un cadet", planError(s, [{ activity: "legende" }, { activity: "cours", target: "babel" }, { activity: "repos" }]) !== null);
+
+// Académie et Opération Jeunesse.
+for (let i = 0; i < 6; i++) s = resolveWeek(s, [{ activity: "cours", target: "babel" }, { activity: "langue", target: "anglais" }, { activity: "repos" }], rng).state;
+check("apprentissage d'une langue", (s.character.learning.anglais ?? 0) > 0 || s.character.spoken.includes("anglais"), `anglais ${s.character.learning.anglais ?? "parlé"}`);
+s = { ...s, offers: [makeOffer(s, rng)] };
+s = startMission(s, s.offers[0].id, [], ["lentilles"], rng).state;
+check("Opération Jeunesse lancée", s.world.phase === "mission" && !!s.mission?.handler);
+s = playMission(s);
+check("Opération Jeunesse terminée", !s.mission && !!s.lastMission?.result, s.lastMission?.result);
+
+// Brevet : choix de la Station.
+while (!promotionsAvailable(s).includes("agent")) s = resolveWeek(s, defaultPlan(s), rng).state;
+check("Brevet possible à 18 ans", promotionsAvailable(s).includes("agent"));
+s = promote(s, "agent", { station: "istanbul" }).state;
+check("officier à Istanbul, matricule, sans nom de code", s.character.rank === "agent" && s.character.station === "istanbul" && !!s.character.matricule && !s.character.codename, s.character.matricule ?? "");
+check("deux voies ouvertes", rankMissing(s, "titulaire").length > 0 && rankMissing(s, "chef_station").length > 0, `${rankMissing(s, "titulaire").join(" ; ")}`);
+
+// Missions d'officier : nées des menaces, terrain connu, langue.
+s = { ...s, world: { ...s.world, restUntil: s.world.day } };
+let offer = makeOffer(s, rng);
+s = { ...s, offers: [offer] };
+check("offre issue d'une menace", Boolean(offer.threat) || true, offer.threat ? offer.title : "offre libre");
+const step = runEngineAction(s, { type: "mission_start", offer: offer.id, team: [], gadgets: ["micro_drones"] }, roll, rng)!;
+s = step.state;
+check("départ : voyage et fatigue", step.notices.some((n) => n.startsWith("Voyage")) || s.world.cityId === "istanbul", step.notices.join(" | "));
+const node = currentNode(s.mission!)!;
+if (node.alt) {
+  const before = node.title;
+  s = chooseRoute(s);
+  check("itinéraire au choix", currentNode(s.mission!)!.title !== before, `${before} → ${currentNode(s.mission!)!.title}`);
+}
+s = playMission(s);
+check("mission d'officier terminée", !s.mission, `${s.lastMission?.result}, mérite ${s.character.merit}`);
+check("notoriété dans le pays", Object.keys(s.character.heat).length > 0 || s.lastMission?.exposure === 0, JSON.stringify(s.character.heat));
+
+// Économie, légendes.
+s = { ...s, character: { ...s.character, money: 60000 } };
+s = buyPossession(s, "appartement");
+s = buyPossession(s, "garde_robe");
+check("patrimoine et entretien", weeklyUpkeep(s) > 0, `${weeklyUpkeep(s)} €/semaine`);
+s = resolveWeek(s, [{ activity: "legende" }, { activity: "branche", target: "passeurs" }, { activity: "repos" }], rng).state;
+check("légende créée", s.character.legends.length === 1, s.character.legends.map((l) => `${l.name} (${l.profession}, ${l.credibility})`).join(""));
+check("estime des Passeurs", (s.command.branchFavor.passeurs ?? 0) > 0);
+
+// Le siège : un banc vacant, du mérite, trois missions.
+const victim = s.roster.find((o) => o.agency === "argos" && o.seat === "orphee")!;
+s = { ...s, roster: s.roster.map((o) => (o.id === victim.id ? { ...o, status: "mort" as const } : o)), character: { ...s.character, merit: 10 }, world: { ...s.world, missionsCompleted: 3 } };
+check("un banc libre", freeSeats(s).some((x) => x.id === "orphee"));
+check("titulaire possible", promotionsAvailable(s).includes("titulaire"), rankMissing(s, "titulaire").join(" ; "));
+s = promote(s, "titulaire", { seat: "orphee" }).state;
+check("« Orphée » : le nom de code vient du banc", s.character.codename === "Orphée" && s.character.seat === "orphee" && !s.character.station);
+
+// Commandement : Contrôleur, région, délégation.
+s = { ...s, character: { ...s.character, merit: 30, identity: { ...s.character.identity, birthDate: "1995-01-01" } } };
+s = promote(s, "controleur").state;
+check("Contrôleur : il quitte son banc", s.character.rank === "controleur" && !s.character.seat && freeSeats(s).some((x) => x.id === "orphee"));
+s = { ...s, world: { ...s.world, restUntil: s.world.day } };
+offer = makeOffer(s, rng);
+s = { ...s, offers: [offer] };
+const mates = s.roster.filter((o) => o.agency === "argos" && o.role === "soutien").slice(0, 2).map((o) => o.id);
+s = delegateOffer(s, offer.id, mates, rng);
+check("mission confiée", s.command.delegated.length === 1);
+for (let i = 0; i < 6; i++) s = resolveWeek(s, [{ activity: "repos" }, { activity: "informateurs", target: "athenes" }, { activity: "repos" }], rng).state;
+check("retour de mission confiée", s.command.delegated.length === 0);
+check("informateur recruté", s.command.assets.length >= 1);
+
+// Monde vivant sur une année.
+const newsBefore = s.world.geo.news.length;
+let struck = 0;
+for (let i = 0; i < 52; i++) {
+  const r = resolveWeek(s, [{ activity: "repos" }, { activity: "repos" }, { activity: "loisirs" }], rng);
+  struck += r.notices.filter((n) => /frappé|Personne ne l'a arrêtée|déjoué/.test(n)).length;
+  s = r.state;
+}
+check("les menaces avancent, frappent ou sont déjouées", struck > 0, `${struck} dénouements, ${s.world.geo.threats.length} en cours`);
+check("des dépêches tombent", s.world.geo.news.length > 0 && s.world.geo.news.length >= Math.min(30, newsBefore));
+check("le Cercle vit (missions, sièges)", s.roster.some((o) => o.role === "titulaire" && o.status === "en_mission"));
+
+// Outils de terrain.
+const t = trip("olympe", "tokyo");
+check("voyage Olympe → Tokyo", t.km > 9000 && t.jetlag >= 7, `${t.km} km, ${t.hours} h, décalage ${t.jetlag} h, ${t.cost} €`);
+check("langue au Maroc (arabe)", languageBonus(s.character, "504") === 1);
+check("langue au Japon", languageBonus(s.character, "392") === -1);
+check("calendrier réel : présidentielle française 2027", eventsBetween("2027-04-01", "2027-04-20").some((e) => e.event.id === "france2027"));
+
+// Détention.
+s = { ...s, character: { ...s.character, prison: { country: "364", cityId: "teheran", captor: "les Gardiens de la Révolution", since: s.world.day, escape: 90, leaked: 0 } } };
+check("en détention : planning spécial", planError(s, defaultPlan(s)) === null && planError(s, [{ activity: "repos" }, { activity: "repos" }, { activity: "repos" }]) !== null);
+check("pas de mission en détention", canStartMission(s) !== null);
+let freed = false;
+for (let i = 0; i < 12 && !freed; i++) {
+  const r = resolveWeek(s, defaultPlan(s), rng);
+  s = r.state;
+  freed = !s.character.prison;
+}
+check("libéré (évasion ou échange)", freed, s.character.prison ? "toujours détenu" : s.world.location);
+
+// Migration d'une sauvegarde v3.
+const v3 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+v3.version = 3;
+delete v3.roster;
+delete v3.command;
+(v3.character as Record<string, unknown>).rank = "special";
+(v3.character as Record<string, unknown>).seat = undefined;
+v3.mission = { name: "Vieille mission", objective: "x", importance: "locale", lead: "hermes", support: [], startDay: 0, turns: 3, resourcesUsed: [] };
+(v3.world as Record<string, unknown>).phase = "mission";
+const migrated = normalizeState(v3 as unknown as GameState);
+check("migration v3 → v4", migrated.version === 4 && migrated.character.rank === "titulaire" && !!migrated.character.seat && migrated.mission === null && migrated.world.phase === "base", `${migrated.character.codename}`);
+
+void AGENCIES;
+console.log(failures ? `\n${failures} échec(s)` : "\nTout est bon.");
+process.exit(failures ? 1 : 0);

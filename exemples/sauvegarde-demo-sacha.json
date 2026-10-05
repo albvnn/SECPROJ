@@ -1,0 +1,618 @@
+{
+  "version": 2,
+  "id": "d4103d84-58f7-481d-afa6-74c0a07c7b10",
+  "createdAt": 1767609600000,
+  "updatedAt": 1788004140000,
+  "character": {
+    "identity": {
+      "firstName": "Sacha",
+      "lastName": "Morel",
+      "age": 15,
+      "gender": "fille",
+      "birthplace": "Sous un chapiteau, près de Valence (Drôme)",
+      "appearance": "Petite, nerveuse, cheveux noirs coupés court, yeux gris très clairs. Des mains d'adulte sur un corps d'enfant. Sourit de travers quand elle ment.",
+      "languages": "Français, italien, espagnol"
+    },
+    "originId": "forain",
+    "dramaId": "disparition",
+    "motivationId": "verite",
+    "qualities": [
+      "felin",
+      "argent"
+    ],
+    "flaw": "tetebrulee",
+    "playerNotes": "Elle garde le chausson de trapèze de sa mère. Elle déteste qu'on la touche sans prévenir.",
+    "attributes": {
+      "esprit": 2,
+      "ame": 3,
+      "corps": 3,
+      "geste": 5
+    },
+    "skills": {
+      "logique": {
+        "rank": 1,
+        "xp": 2
+      },
+      "archives": {
+        "rank": 0,
+        "xp": 1
+      },
+      "machine": {
+        "rank": 1,
+        "xp": 1
+      },
+      "babel": {
+        "rank": 1,
+        "xp": 3
+      },
+      "medecine": {
+        "rank": 1,
+        "xp": 0
+      },
+      "tactique": {
+        "rank": 0,
+        "xp": 2
+      },
+      "sangfroid": {
+        "rank": 1,
+        "xp": 2
+      },
+      "empathie": {
+        "rank": 2,
+        "xp": 1
+      },
+      "masque": {
+        "rank": 2,
+        "xp": 5
+      },
+      "eloquence": {
+        "rank": 2,
+        "xp": 0
+      },
+      "instinct": {
+        "rank": 1,
+        "xp": 1
+      },
+      "tenue": {
+        "rank": 1,
+        "xp": 3
+      },
+      "endurance": {
+        "rank": 2,
+        "xp": 1
+      },
+      "force": {
+        "rank": 1,
+        "xp": 0
+      },
+      "combat": {
+        "rank": 2,
+        "xp": 5
+      },
+      "athletisme": {
+        "rank": 3,
+        "xp": 4
+      },
+      "tolerance": {
+        "rank": 1,
+        "xp": 0
+      },
+      "alerte": {
+        "rank": 1,
+        "xp": 2
+      },
+      "precision": {
+        "rank": 2,
+        "xp": 1
+      },
+      "doigte": {
+        "rank": 2,
+        "xp": 1
+      },
+      "ombre": {
+        "rank": 3,
+        "xp": 2
+      },
+      "pilotage": {
+        "rank": 1,
+        "xp": 0
+      },
+      "vivacite": {
+        "rank": 4,
+        "xp": 7
+      },
+      "regard": {
+        "rank": 2,
+        "xp": 2
+      }
+    },
+    "signature": "vivacite",
+    "health": 10,
+    "healthMax": 12,
+    "morale": 9,
+    "moraleMax": 12,
+    "reputation": 61,
+    "rank": "bordeaux",
+    "codename": "Funambule",
+    "inventory": [
+      {
+        "name": "Trois balles de jonglage",
+        "description": "Usées, recousues. Tes mains s'apaisent quand elles les tiennent.",
+        "bonus": {
+          "skill": "sangfroid",
+          "value": 1,
+          "condition": "se calmer avant une épreuve"
+        }
+      },
+      {
+        "name": "Montre-garrot",
+        "description": "Atelier. Le bracelet se déroule en un fil d'acier de 60 cm.",
+        "atelier": true,
+        "bonus": {
+          "skill": "combat",
+          "value": 2,
+          "condition": "maîtriser quelqu'un par surprise"
+        },
+        "charges": 2
+      },
+      {
+        "name": "Boutons de manchette émetteurs",
+        "description": "Atelier. Micro et balise ; Nour t'entend en permanence.",
+        "atelier": true
+      },
+      {
+        "name": "Escarpins à semelle-cachette",
+        "description": "Atelier. Le talon gauche dévisse.",
+        "atelier": true,
+        "bonus": {
+          "skill": "masque",
+          "value": 1,
+          "condition": "passer une fouille"
+        },
+        "charges": 1
+      },
+      {
+        "name": "Clé USB « AURORA-7 »",
+        "description": "Prise dans le coffre de Massimo Ferrandi. Contenu inconnu, chiffré."
+      }
+    ],
+    "distinctions": [
+      {
+        "name": "Épingle d'argent",
+        "reason": "A sorti Nour Haddad du lac gelé pendant la Semaine Blanche."
+      }
+    ],
+    "skillPoints": 1,
+    "salon": "gouttieres",
+    "money": 245,
+    "missionFunds": 1100
+  },
+  "world": {
+    "phase": "mission",
+    "day": 236,
+    "location": "Monaco — yacht « Aurora », bureau de Massimo Ferrandi",
+    "chapter": "Opération Velours",
+    "missionsCompleted": 1
+  },
+  "relations": [
+    {
+      "name": "Nour Haddad",
+      "role": "Binôme du Creuset, en soutien radio sur l'essayage",
+      "affinity": 64,
+      "notes": "Silencieuse, redoutable au tir. Te doit la vie depuis le lac. Couverture : nièce du gardien de la marina."
+    },
+    {
+      "name": "Luca Ferrandi",
+      "role": "Cible de l'essayage, 16 ans, fils de Massimo",
+      "affinity": 34,
+      "notes": "Seul, avide d'amitié, sincèrement attaché à « Sacha Lenoir ». Ignore les affaires de son père. Porte des boutons de manchette Ouroboros, cadeau paternel."
+    },
+    {
+      "name": "Massimo Ferrandi",
+      "role": "Courtier en yachts, cible principale",
+      "affinity": -12,
+      "notes": "Blanchit pour Halcyon Group. A évoqué « la trapéziste » de Gênes. Méfiant envers les filles du consulat."
+    },
+    {
+      "name": "L'Anglais aux richelieus",
+      "role": "Contact de Ferrandi, lié à Halcyon et au Corbeau",
+      "affinity": 0,
+      "notes": "Voix posée, chaussures cousues main. Sait ce qui est arrivé à Elena Morel. Nom inconnu."
+    },
+    {
+      "name": "Hugo Mercier",
+      "role": "Tailleur, officier traitant de Sacha",
+      "affinity": 22,
+      "notes": "A rédigé le dossier de recrutement. Cache quelque chose sur Gênes 2021."
+    },
+    {
+      "name": "Auguste Delorme",
+      "role": "Le Maître Tailleur",
+      "affinity": 18,
+      "notes": "A choisi le nom de code « Funambule ». Était le Tailleur du Corbeau."
+    },
+    {
+      "name": "Commandante Ysaline Marchetti",
+      "role": "Cheffe du Creuset",
+      "affinity": -4,
+      "notes": "Ne t'a jamais pardonné le vol de son badge, mais t'a notée deuxième de la promotion."
+    },
+    {
+      "name": "Théo Castel",
+      "role": "Rival de promotion, cravate bordeaux",
+      "affinity": -38,
+      "notes": "Sait pour le badge de Marchetti. Garde le secret comme monnaie d'échange."
+    },
+    {
+      "name": "Lazare Fontaine",
+      "role": "Génie de l'Atelier",
+      "affinity": 31,
+      "notes": "T'a confié les escarpins à semelle-cachette « à condition de les rapporter, pour une fois »."
+    },
+    {
+      "name": "Ruben Dusart",
+      "role": "Ancien directeur du Cirque Dusart, figure paternelle",
+      "affinity": 72,
+      "notes": "Hospitalisé à Avignon. Tu lui écris en secret, ce qui est interdit."
+    },
+    {
+      "name": "Elena Morel",
+      "role": "Ta mère, trapéziste, disparue en 2021",
+      "affinity": 90,
+      "notes": "Disparue à Gênes le 14 octobre 2021. Liée à une berline de Monaco, et maintenant au Corbeau."
+    },
+    {
+      "name": "Basile Roux",
+      "role": "Chef de la sécurité du Domaine, parrain officieux des Gouttières",
+      "affinity": 24,
+      "notes": "Fait semblant de traquer les Gouttières. A laissé Sacha « voler » une clé de la Tour Vautrin pour son rite d'entrée."
+    }
+  ],
+  "journal": [
+    "Elena Morel a disparu à Gênes le 14 octobre 2021 ; une berline immatriculée à Monaco a été vue sur le quai Calvi ; l'enquête a été close sur intervention extérieure.",
+    "Théo Castel a vu Sacha voler le badge de la commandante Marchetti pendant la Semaine Blanche et garde ce secret comme monnaie d'échange.",
+    "Luca Ferrandi porte des boutons de manchette gravés d'un serpent qui se mord la queue, cadeau de son père.",
+    "Le code de la porte du bureau de Massimo Ferrandi est 0612 ; celui du coffre est 061214 (le 14, jour de la disparition d'Elena).",
+    "La clé USB « AURORA-7 » a été prise dans le coffre de Ferrandi ; son contenu est chiffré.",
+    "L'Anglais a dit : « Halcyon a été très clair : la livraison passe par Gênes, comme la dernière fois » et « Le Corbeau s'est occupé de la trapéziste ».",
+    "Sacha écrit en secret à Ruben Dusart à l'hôpital d'Avignon, en violation du règlement du Domaine."
+  ],
+  "journalResolved": [
+    "Le surveillant de nuit du dortoir Est dort entre 3 h et 4 h.",
+    "Opération Lanterne : identifier le revendeur de la cité Mermoz (Lyon) — c'était le cousin du surveillant du collège."
+  ],
+  "dossier": {
+    "text": "SÉRAPHIN — DOSSIER DE CANDIDATURE — CLASSIFICATION : ANGE\nSujet : Sacha MOREL — 15 ans — Rédigé par : le Tailleur Hugo Mercier\n\n### I. Naissance sous la toile\nNée le 3 mars 2011 sous le chapiteau du **Cirque Dusart**, alors en tournée près de Valence (Drôme). Mère : **Elena Morel**, trapéziste vedette, 27 ans à l'époque. Père : non déclaré. Une note manuscrite de la sage-femme, retrouvée dans les archives de la maternité, mentionne « un homme en costume gris venu deux fois, reparti sans entrer ». Identité : ██████████.\n\nLes premières années tiennent dans une caravane, entre Montélimar, Turin et Barcelone. Sacha marche à dix mois, jongle à quatre ans, parle français, italien et l'espagnol des coulisses avant d'entrer à l'école — par correspondance, comme tous les enfants de la balle.\n\n### II. L'école de la piste\nÀ huit ans, Sacha fait son premier numéro : une acrobatie à la barre fixe sous le regard de sa mère. Ruben Dusart, directeur du cirque et « Monsieur Loyal » de toujours, note dans son carnet de tournée : *« La petite ne tombe jamais. Elle regarde le public comme on compte des cartes. »*\n\nLe sujet développe très tôt deux talents qui ont retenu notre attention : une vivacité de mains hors du commun, et une aptitude troublante à lire les spectateurs — qui ment, qui s'ennuie, qui a de l'argent sur lui.\n\n### III. Gênes, 14 octobre 2021\nDernière soirée de la tournée italienne. Elena Morel quitte la piste après son numéro, encore en costume, pour « rejoindre quelqu'un sur le port ». Elle ne revient pas. La police italienne conclut à une noyade accidentelle ; le corps n'est jamais retrouvé. Le rapport mentionne une berline immatriculée à Monaco, aperçue sur le quai Calvi. Cette piste a été close au bout de six jours sur intervention de ██████████████.\n\nSacha a dix ans. Elle refuse de quitter le cirque. Ruben Dusart obtient une délégation d'autorité parentale provisoire et la garde avec lui.\n\n### IV. La chute du Cirque Dusart\nEn 2024, le Cirque Dusart fait faillite. Les créanciers saisissent le chapiteau ; Ruben Dusart, malade, est hospitalisé à Avignon. Sacha est placée en foyer à Marseille. Elle fugue onze fois en dix-huit mois. Elle survit en faisant les poches des touristes sur le Vieux-Port avec une efficacité qui a fini par attirer l'attention d'un réseau de pickpockets — et la nôtre.\n\nElle cherche toujours sa mère. Elle a écrit trois lettres à la police de Gênes. Elle n'a jamais reçu de réponse.\n\n### Évaluation du Tailleur\nForces : réflexes exceptionnels, mains d'une précision rare, sens aigu du rôle et du public, polyglotte. Faiblesses : impulsivité, refus quasi total de l'autorité adulte, obsession pour la disparition de sa mère. Risque : la piste monégasque de 2021 recoupe un dossier en cours que le sujet ne doit pas connaître.\n\nRecommandation : *à recruter avant qu'elle ne trouve seule ce que nous cherchons depuis cinq ans.*",
+    "summary": "Sacha Morel, née en 2011 sous le chapiteau du Cirque Dusart. Mère : Elena Morel, trapéziste, disparue à Gênes le 14 octobre 2021 après être partie « rejoindre quelqu'un sur le port » ; police italienne : noyade, corps jamais retrouvé ; une berline immatriculée à Monaco vue sur le quai Calvi, piste close après une intervention extérieure (censurée). Père inconnu ; un homme en costume gris venu deux fois à la maternité. Ruben Dusart, directeur du cirque, l'a élevée ensuite ; il est malade, hospitalisé à Avignon après la faillite du cirque en 2024. Sacha placée en foyer à Marseille, onze fugues, pickpocket sur le Vieux-Port, repérée par un réseau. Elle a écrit trois lettres sans réponse à la police de Gênes. Le Tailleur Hugo Mercier note que la piste monégasque recoupe un dossier en cours de SÉRAPHIN, à cacher au sujet. Mystères ouverts : identité du père, rôle de l'homme en gris, ce qui est arrivé à Elena, qui a fait classer l'enquête."
+  },
+  "saga": "",
+  "archives": [
+    {
+      "title": "Le recrutement",
+      "summary": "Arrêtée par la BAC sur le Vieux-Port après un vol à la tire qui a mal tourné, Sacha est extraite de garde à vue par le Tailleur Hugo Mercier. Au Domaine de Valombre, elle passe la journée d'épreuves ; l'épreuve piège (rendre ou non un portefeuille « oublié » plein d'argent) la voit rendre l'argent mais garder la photo de famille qu'il contenait. Delorme, amusé, lui propose le Creuset. Elle accepte à condition de pouvoir chercher sa mère ; Delorme ne promet rien. Elle rencontre son binôme, Nour Haddad."
+    },
+    {
+      "title": "Le Creuset — Les premiers jours",
+      "summary": "Réveils à 5 h, nage dans le lac, combats avec Victor Sanche qui la juge « trop rapide pour être prudente ». Rivalité immédiate avec Théo Castel, fils d'un ancien agent. Premier cours d'étiquette avec Delorme : désastre complet, puis progrès fulgurants grâce à son sens du rôle. Elle vole le badge de la commandante Marchetti pour accéder aux archives et chercher le nom de sa mère ; Théo la voit. Rien trouvé, sinon un dossier « Gênes 2021 » au nom de Mercier, scellé."
+    },
+    {
+      "title": "Le Creuset — La Semaine Blanche",
+      "summary": "Six jours sans sommeil. Nour fait un malaise et tombe dans le lac à moitié gelé lors d'un exercice de nuit ; Sacha plonge sans attendre les instructeurs et la sort de l'eau. Épingle d'argent. Lien désormais très fort avec Nour, qui lui confie qu'elle cache une lettre de sa sœur. Interrogatoire simulé tenu sans craquer, mais Sacha a mentionné sa mère, ce qui a été noté."
+    },
+    {
+      "title": "Le Creuset — La Nuit Blanche",
+      "summary": "48 heures d'exercice à Lyon. Sacha et Nour réussissent l'exfiltration d'un « témoin » sous le nez de la police, au prix d'une chute de toit (côtes fêlées). Deuxième de promotion derrière Nour. Cérémonie à la Maison Vautrin : costume de Mme Ferrand, cravate bordeaux, nom de code « Funambule » donné par Delorme (« Vous avancez toujours au-dessus du vide, mademoiselle. Tâchez de regarder devant. »). Geste renforcé. Nuit des Cartons : invitée par les Gouttières, le Salon Rouge et les Corsaires, elle choisit les Gouttières — Théo Castel, lui, rejoint le Salon Rouge."
+    },
+    {
+      "title": "Premier essayage : Opération Lanterne",
+      "summary": "Infiltrée au collège Jean-Mermoz (Lyon 8ᵉ) pour identifier qui recrute des 4ᵉ comme guetteurs. Sacha gagne la confiance d'une élève, Yasmina, et démasque le cousin du surveillant. Essayage réussi, mais Yasmina a cru à une vraie amitié : Sacha en garde une culpabilité tenace. Mercier la félicite et l'affecte, contre l'avis de Marchetti, à l'Opération Velours à Monaco."
+    }
+  ],
+  "chronicle": "Opération Velours, Monaco. Objectif : prouver que Massimo Ferrandi, courtier en yachts, blanchit l'argent de Halcyon Group. Doublure de Sacha : Sacha Lenoir, fille d'un attaché du consulat, élève à l'École internationale du Rocher. Nour en soutien, sous couverture de nièce du gardien de la marina. En deux semaines, Sacha devient l'amie de Luca Ferrandi, 16 ans, fils de la cible, solitaire et attachant ; elle remarque ses boutons de manchette Ouroboros. Lazare lui fournit des escarpins à semelle-cachette, une montre-garrot et des boutons émetteurs. Luca l'invite à la fête du samedi sur l'Aurora ; elle promet de venir. Une note entrevue chez les Ferrandi suggère un code commençant par 0612. Le Tailleur Mercier insiste pour qu'elle ne prenne « aucun risque inutile » ; il semble nerveux dès qu'on parle de Gênes.",
+  "chronicleChapter": "Opération Velours",
+  "chronicleUpTo": 0,
+  "gmNotes": "ARC EN COURS (Opération Velours) : climax sur l'Aurora. Luca va trouver Sacha près du bureau ; il soupçonne quelque chose mais la couvrira si elle lui fait confiance — vraie question morale. L'Anglais = Nathaniel Wren, directeur des opérations de Halcyon en Méditerranée ; il porte une chevalière Ouroboros. Il a repéré le faux serveur (un homme de LARK, les Britanniques du Cercle, qui enquêtent aussi sur Halcyon — friction à venir). AURORA-7 contient un manifeste de livraison d'armes via Gênes + un fichier « TRAPÈZE » chiffré avec une clé que seul Mercier pourra ouvrir.\nSECRETS : Mercier était en poste à Gênes en 2021 ; Elena Morel était une source de SÉRAPHIN (une Écaille retournée ?). Le Corbeau est vivant et travaille pour Ouroboros ; il a enlevé Elena, peut-être vivante. Ne révéler qu'au compte-gouttes : prochain indice = une photo d'Elena datée de 2023 dans AURORA-7.\nPNJ : Théo Castel utilisera le secret du badge au pire moment. Ruben Dusart va recevoir une visite suspecte à Avignon.\nRYTHME : 4 à 8 tours avant l'exfiltration, puis retouche houleuse avec Mercier.",
+  "log": [
+    {
+      "id": "e1",
+      "role": "narrator",
+      "ts": 1788003600000,
+      "segments": [
+        {
+          "kind": "text",
+          "text": "L'*Aurora* brille comme un lustre posé sur l'eau noire du port Hercule. Soixante mètres de yacht, trois ponts, un quatuor à cordes qui joue du Coldplay en version baroque, et deux cents invités dont aucun n'a moins de dix mille euros de montre au poignet.\n\nTu portes le costume bleu nuit que Mme Ferrand t'a ajusté il y a trois jours — « Pour Monaco, mademoiselle, on ne brille pas : on luit. » Dans ta doublure, tu es Sacha Lenoir, fille d'un attaché du consulat, nouvelle à l'École internationale du Rocher depuis deux semaines.\n\n{{tenue}} Le serveur de gauche vous a présenté le plateau par la droite. Il n'est pas serveur. Ou il l'est depuis hier.\n\n{{regard}} Il a une marque de bague sur l'annulaire, mais pas de bague. Et il regarde la porte du pont supérieur toutes les quarante secondes.\n\nLuca Ferrandi fend la foule vers toi, deux coupes de jus de grenade à la main, sourire de fils de famille un peu trop fier de sa soirée.\n\n— Tu es venue ! Mon père dit que les filles du consulat ne viennent jamais à rien.\n\nSes boutons de manchette accrochent la lumière. Un serpent d'argent qui se mord la queue.\n\nDans ton oreille, la voix de Nour, à peine un souffle : *« Bureau du père, pont supérieur, deuxième porte. Il est à la proue avec ses invités. Tu as dix minutes, peut-être douze. »*"
+        },
+        {
+          "kind": "event",
+          "text": "Moral +1 (9/12)"
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "role": "player",
+      "ts": 1788003660000,
+      "segments": [
+        {
+          "kind": "text",
+          "text": "[Masque] Prétexter le mal de mer pour s'éclipser vers les cabines"
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "role": "narrator",
+      "ts": 1788003720000,
+      "segments": [
+        {
+          "kind": "text",
+          "text": "Tu poses une main sur le bras de Luca et l'autre sur ton ventre, juste assez de pâleur dans le sourire."
+        },
+        {
+          "kind": "check",
+          "check": {
+            "skill": "masque",
+            "difficulty": "ardue",
+            "reason": "Faire croire à Luca à un mal de mer pour s'éclipser",
+            "red": false,
+            "dice": [
+              3,
+              2
+            ],
+            "bonus": 6,
+            "bonusBreakdown": [
+              "Âme +3",
+              "Rangs +2",
+              "Traits +1"
+            ],
+            "total": 11,
+            "dc": 12,
+            "outcome": "reussite_partielle"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "— Je crois que ton bateau ne m'aime pas, souffles-tu.\n\nLuca rit, compatissant — puis son visage change.\n\n— Attends, je t'accompagne. Les toilettes d'en bas sont horribles, prends celles de mon père, en haut.\n\n{{empathie}} Il est content. Vraiment content d'avoir une raison de rester avec toi. Ce garçon n'a pas d'amis ; il a des invités.\n\n{{masque}} Parfait. Il t'ouvre lui-même la porte du loup. Souris, mon ange, souris.\n\nIl te guide dans l'escalier en colimaçon. Au pont supérieur, le couloir est tapissé de teck et de silence. Luca s'arrête devant la deuxième porte, tape un code sans même te cacher le clavier — 0-6-1-2 — puis se ravise.\n\n— Ah, non, ça c'est son bureau. Les toilettes, c'est la porte d'après. Je t'attends en haut de l'escalier, d'accord ?\n\nIl reste là. À dix mètres. Le dos tourné, par politesse."
+        },
+        {
+          "kind": "event",
+          "text": "Moral −1 (8/12)"
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "role": "player",
+      "ts": 1788003900000,
+      "original": "J'ouvre le coffre direct avec le code 0612 et je prends tous les documents",
+      "segments": [
+        {
+          "kind": "text",
+          "text": "Je tente d'entrer dans le bureau avec le code 0612, puis d'ouvrir le coffre en partant de cette combinaison"
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "role": "narrator",
+      "ts": 1788003960000,
+      "segments": [
+        {
+          "kind": "text",
+          "text": "Tu entres dans les toilettes, fais couler l'eau, ressors par la porte de communication que les plans de Nour avaient repérée. Le bureau de Massimo Ferrandi sent le cigare froid et le cuir neuf. Le coffre est encastré derrière une marine du XIXᵉ siècle, exactement là où tout le monde met son coffre.\n\n{{logique}} 0612 ouvre la porte. Un homme qui recycle un code est un homme paresseux. Le coffre a six chiffres. Commence par 0612.\n\n{{alerte}} DIX MÈTRES. LUCA EST À DIX MÈTRES."
+        },
+        {
+          "kind": "check",
+          "check": {
+            "skill": "doigte",
+            "difficulty": "redoutable",
+            "reason": "Ouvrir le coffre de Massimo Ferrandi en partant du code 0612",
+            "red": true,
+            "dice": [
+              4,
+              3
+            ],
+            "bonus": 8,
+            "bonusBreakdown": [
+              "Geste +5",
+              "Rangs +2",
+              "Situation +1"
+            ],
+            "total": 15,
+            "dc": 13,
+            "outcome": "reussite"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "0-6-1-2-1-4. Le 14. Le jour de la disparition de ta mère, ce n'est pas possible, c'est une coïncidence, et pourtant le coffre s'ouvre avec un soupir de vérin.\n\nÀ l'intérieur : des liasses de billets que tu ignores, un passeport danois au nom d'un inconnu, et une clé USB argentée gravée *AURORA-7*. Tu la glisses dans ta semelle-cachette.\n\n{{instinct}} Le 14. Le chiffre est une porte, et derrière cette porte il y a quelqu'un qui t'attend depuis cinq ans.\n\nDes pas, dans le couloir. Deux hommes. La voix de Massimo Ferrandi, et une autre, anglaise, posée comme un verre sur une nappe."
+        },
+        {
+          "kind": "event",
+          "text": "Doigté progresse : rang 2"
+        },
+        {
+          "kind": "event",
+          "text": "Obtenu : Clé USB « AURORA-7 »"
+        },
+        {
+          "kind": "event",
+          "text": "Carnet mis à jour"
+        }
+      ]
+    },
+    {
+      "id": "e6",
+      "role": "player",
+      "ts": 1788004080000,
+      "segments": [
+        {
+          "kind": "text",
+          "text": "[Vivacité] Refermer le coffre et se glisser sous le bureau avant que la porte s'ouvre"
+        }
+      ]
+    },
+    {
+      "id": "e7",
+      "role": "narrator",
+      "ts": 1788004140000,
+      "segments": [
+        {
+          "kind": "check",
+          "check": {
+            "skill": "vivacite",
+            "difficulty": "ardue",
+            "reason": "Refermer le coffre et disparaître sous le bureau avant l'entrée des deux hommes",
+            "red": false,
+            "dice": [
+              6,
+              6
+            ],
+            "bonus": 10,
+            "bonusBreakdown": [
+              "Geste +5",
+              "Rangs +4",
+              "Traits +1"
+            ],
+            "total": 22,
+            "dc": 12,
+            "outcome": "reussite_critique"
+          }
+        },
+        {
+          "kind": "text",
+          "text": "Le tableau retrouve sa place, le coffre son silence, et toi l'ombre sous le plateau d'acajou — tout ça dans le temps qu'il faut à une poignée pour tourner. Tu as même eu le temps de redresser le cadre de deux millimètres.\n\n{{vivacite}} Propre. Très propre. On aurait dit le numéro du trapèze.\n\nLes deux hommes entrent. Tu vois leurs chaussures : des mocassins vernis — Ferrandi — et des richelieus anglais impeccables, cousus main, que M. Delorme aurait approuvés.\n\n— Le garçon fait des fêtes pendant que je travaille, soupire Ferrandi.\n\n— Laissez-le faire, répond l'Anglais. Les fêtes attirent les curieux. Et nous aimons savoir qui est curieux. Halcyon a été très clair : la livraison passe par Gênes, comme la dernière fois.\n\nUn silence. Un briquet.\n\n— La dernière fois, il y a eu ce problème avec la trapéziste.\n\n— Il n'y a eu aucun problème, Massimo. Le Corbeau s'en est occupé. Le Corbeau s'occupe toujours de tout.\n\n{{sangfroid}} Respire. Tu ne bouges pas. Tu ne respires pas fort. Tu es un meuble. Tu pleureras plus tard.\n\n{{logique}} « Le Corbeau ». L'agent disparu en 2009. Vivant. Et lié à ta mère.\n\nDans ton oreille, la voix de Nour, tendue : *« Sacha. Luca te cherche. Il monte. »*"
+        },
+        {
+          "kind": "event",
+          "text": "Moral −3 (9/12)"
+        },
+        {
+          "kind": "event",
+          "text": "Carnet mis à jour"
+        },
+        {
+          "kind": "event",
+          "text": "Nouveau contact : L'Anglais aux richelieus"
+        }
+      ]
+    }
+  ],
+  "choices": [
+    {
+      "label": "Sortir par la porte de communication et rejoindre Luca avant qu'il n'arrive",
+      "tone": "prudence",
+      "skill": "ombre"
+    },
+    {
+      "label": "Rester cachée pour écouter la suite de la conversation",
+      "tone": "audace",
+      "skill": "sangfroid"
+    },
+    {
+      "label": "Prévenir Nour de créer une diversion sur le pont principal",
+      "tone": "ruse",
+      "skill": "tactique"
+    },
+    {
+      "label": "Sortir de sous le bureau et jouer l'invitée perdue",
+      "tone": "social",
+      "skill": "masque"
+    }
+  ],
+  "usage": {
+    "turns": 87,
+    "inputTokens": 214000,
+    "cacheReadTokens": 1980000,
+    "cacheWriteTokens": 248000,
+    "outputTokens": 131000,
+    "costUsd": 5.02
+  },
+  "progress": [
+    {
+      "ts": 1767609600000,
+      "day": 1,
+      "kind": "rank",
+      "text": "Nouveau rang : Recrue — Cravate grise"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 31,
+      "kind": "pin",
+      "text": "Distinction : Épingle d'argent"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 58,
+      "kind": "skill",
+      "text": "Athlétisme progresse : rang 3"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 100,
+      "kind": "rank",
+      "text": "Nouveau rang : Agent — Cravate bordeaux"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 100,
+      "kind": "codename",
+      "text": "Nom de code : Funambule"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 100,
+      "kind": "pole",
+      "text": "Geste passe à 5 — plafonds d'apprentissage relevés"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 101,
+      "kind": "salon",
+      "text": "Salon rejoint : Les Gouttières"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 171,
+      "kind": "money",
+      "text": "Prime d'essayage : +150 €"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 171,
+      "kind": "points",
+      "text": "+1 point de compétence à répartir (essayage réussi)"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 214,
+      "kind": "item",
+      "text": "Obtenu : Montre-garrot"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 236,
+      "kind": "skill",
+      "text": "Doigté progresse : rang 2"
+    },
+    {
+      "ts": 1767609600000,
+      "day": 236,
+      "kind": "item",
+      "text": "Obtenu : Clé USB « AURORA-7 »"
+    }
+  ],
+  "settings": {
+    "narration": "hybride",
+    "pace": "normal"
+  },
+  "scene": {
+    "title": "Sous le bureau",
+    "goal": "Sortir du bureau sans être vue et décider quoi dire à Luca",
+    "turns": 1,
+    "planned": 3
+  },
+  "phaseTurns": 7,
+  "nextIntensity": "forte",
+  "routing": null
+}
