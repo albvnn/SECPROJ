@@ -4,6 +4,7 @@
  * la hiérarchie (pour ses propres missions), les gens qu'on connaît, ses informateurs, des agents rivaux,
  * des courtiers du marché noir ou la presse. Plus on sort des canaux officiels, plus on apprend… et plus on paie.
  */
+import { pushLedger } from "./ledger";
 import { AGENCIES } from "./agencies";
 import { BRANCH_FAVOR_MIN } from "./engine";
 import { branchFavor, shiftBranchFavor } from "./command";
@@ -388,7 +389,10 @@ function payCost(state: GameState, c: CostSpec): GameState {
   let ch = { ...s.character };
   if (c.estime) s = shiftBranchFavor(s, c.estime.branch, -c.estime.amount);
   if (c.reputation) ch.reputation = Math.max(0, ch.reputation - c.reputation);
-  if (c.money) ch.money -= c.money;
+  if (c.money) {
+    ch.money -= c.money;
+    ch.ledger = pushLedger(ch.ledger, s.world.day, "Renseignement acheté", -c.money);
+  }
   if (c.cover) ch.cover = Math.max(0, ch.cover - c.cover);
   if (c.heat) ch = { ...ch, heat: { ...ch.heat, [c.heat.country]: Math.min(100, (ch.heat?.[c.heat.country] ?? 0) + c.heat.amount) } };
   s = { ...s, character: ch };

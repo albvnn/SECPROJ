@@ -332,9 +332,13 @@ export function GameScreen({ initial }: { initial: GameState }) {
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [live, state.log.length, error]);
 
+  const [away, setAway] = useState(false);
   const onScroll = () => {
     const el = scrollRef.current;
-    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottom.current = gap < 120;
+    setAway(gap > 400);
   };
 
   const w = state.world;
@@ -630,6 +634,19 @@ export function GameScreen({ initial }: { initial: GameState }) {
                 </div>
               )}
             </div>
+            {/* Revenir en bas du récit. */}
+            {away && (
+              <div className="pointer-events-none sticky bottom-4 flex justify-end px-4">
+                <button
+                  onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })}
+                  className="animate-rise pointer-events-auto grid h-10 w-10 place-items-center rounded-full border border-line-strong bg-panel/95 text-lg text-brass shadow-xl backdrop-blur transition-transform hover:-translate-y-0.5 hover:text-brass-soft"
+                  aria-label="Aller en bas du récit"
+                  title="Aller en bas"
+                >
+                  ↓
+                </button>
+              </div>
+            )}
           </div>
 
           {promotions.length > 0 && !busy && (

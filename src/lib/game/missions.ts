@@ -2,6 +2,7 @@
  * Missions jouées par le moteur : génération, préparation, étapes et résultat.
  * Le narrateur ne fait que raconter ce que ce module décide.
  */
+import { pushLedger } from "./ledger";
 import { AGENCIES, findBranch, findSeat } from "./agencies";
 import { findGadget, GADGETS } from "./gadgets";
 import { chance, pick, pickWeighted, randInt, shuffle, uid, type Rng } from "./rng";
@@ -1566,6 +1567,7 @@ function finishMission(state: GameState, rng: Rng): { state: GameState; notices:
     notices.push(`Mérite +${gained} : mission ${MISSION_IMPORTANCE[m.importance].label.toLowerCase()}, ${MISSION_RESULTS[result].label.toLowerCase()}`);
     if (bonus > 0) {
       c.money += bonus;
+      c.ledger = pushLedger(c.ledger, state.world.day, `Prime de mission : ${m.name}`, bonus);
       notices.push(`Prime de mission : +${formatEuros(bonus)}`);
     }
   } else {

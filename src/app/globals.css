@@ -391,3 +391,29 @@
     animation: none;
   }
 }
+
+/* Le téléphone : une app s'ouvre en grandissant, l'accueil revient en se posant. */
+@keyframes app-open {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+@keyframes home-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+.animate-app-open {
+  animation: app-open 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.animate-home-in {
+  animation: home-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-app-open,
+  .animate-home-in {
+    animation: none;
+  }
+}
