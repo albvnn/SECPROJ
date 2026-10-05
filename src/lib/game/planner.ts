@@ -22,6 +22,7 @@ import { addNews, shiftDiplomacy, shiftTension, weeklyWorld } from "@/lib/world/
 import { resolveRequests } from "./sources";
 import { bodyWeek } from "./body";
 import { pushLedger } from "./ledger";
+import { syncWithRoster, weeklyBonds } from "./bonds";
 
 export const SLOTS = 3;
 
@@ -246,7 +247,7 @@ function recruitAsset(state: GameState, cityId: string, rng: Rng): Asset | null 
 /* Résolution de la semaine                                            */
 /* ------------------------------------------------------------------ */
 
-const BOND_DECAY: Record<string, number> = { proche: 8, mentor: 5, equipier: 6, allie: 5, contact: 3, rival: 0, ennemi: 0 };
+const BOND_DECAY: Record<string, number> = { amour: 10, proche: 8, ami: 5, mentor: 5, equipier: 6, allie: 5, contact: 3, ex: 0, rival: 0, ennemi: 0 };
 
 export interface WeekResult {
   state: GameState;
@@ -596,6 +597,14 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
     }),
   };
 
+  // Les liens vivent : amitiés qui mûrissent, histoires négligées, la vie des civils.
+  {
+    const b = weeklyBonds(state, rng);
+    state = { ...state, relations: b.relations };
+    notices.push(...b.notices);
+    lines.push(...b.lines);
+  }
+
   // Devoirs : échéances et nouveaux.
   for (const d of state.duties.filter((x) => x.status === "ouvert" && x.dueDay < now)) {
     const p = d.penalty;
@@ -636,9 +645,21 @@ export function resolveWeek(initial: GameState, plan: ActivityChoice[], rng: Rng
   }
 
   // L'effectif vit sa vie : missions du Cercle, sièges vacants, cadets brevetés.
+  const rosterBefore = state.roster;
   const lives = weeklyRoster(state, rng);
   state = lives.state;
   notices.push(...lives.notices);
+  // Tes camarades et collègues : leur fiche suit leurs mutations.
+  {
+    const sync = syncWithRoster(state.relations, rosterBefore, state.roster, state.world.day);
+    state = { ...state, relations: sync.relations };
+    for (const n of sync.notices) {
+      // Pas de doublon avec ce que l'effectif a déjà annoncé.
+      const who = state.relations.find((r) => n.startsWith(r.name))?.name;
+      if (!who || !lives.notices.some((x) => x.includes(who))) notices.push(n);
+    }
+    lines.push(...sync.lines);
+  }
   lines.push(...lives.notices.map((n) => `${n}.`));
 
   // Missions déléguées qui rentrent.

@@ -266,7 +266,7 @@ export interface Injury {
   healDay?: number;
 }
 
-export type RelationKind = "proche" | "mentor" | "equipier" | "allie" | "contact" | "rival" | "ennemi";
+export type RelationKind = "proche" | "mentor" | "equipier" | "allie" | "contact" | "ami" | "amour" | "ex" | "rival" | "ennemi";
 export type RelationStatus = "actif" | "injoignable" | "disparu" | "mort" | "archive";
 
 export interface Relation {
@@ -291,6 +291,12 @@ export interface Relation {
   positionDay?: number;
   /** Sous quelle identité elle te connaît : « reel », « code », ou le nom d'une légende. */
   knownAs?: string;
+  /** Membre de l'effectif (camarade, collègue) : sa fiche suit ses mutations. */
+  operativeId?: string;
+  /** Jour de la rencontre. */
+  metDay?: number;
+  /** Les grandes étapes du lien, datées. */
+  history?: { day: number; text: string }[];
 }
 
 export interface World {

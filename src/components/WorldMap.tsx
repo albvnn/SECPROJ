@@ -134,6 +134,9 @@ function cityInfos(state: GameState): Map<string, CityInfo> {
 }
 
 const RELATION_COLORS: Record<string, string> = {
+  ami: "#4fa3a5",
+  amour: "#e0607e",
+  ex: "#8a7f8f",
   proche: "var(--pole-ame)",
   mentor: "var(--color-brass)",
   equipier: "var(--pole-esprit)",

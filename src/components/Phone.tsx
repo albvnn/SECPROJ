@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AGENCIES } from "@/lib/game/agencies";
 import { parseIso } from "@/lib/game/calendar";
 import { weeklyUpkeep } from "@/lib/game/economy";
-import { RELATION_LIMIT } from "@/lib/game/engine";
+import { RELATION_LIMIT, currentAge } from "@/lib/game/engine";
 import { ACTIVITIES, planError } from "@/lib/game/planner";
 import { RANKS, SKILLS, formatEuros } from "@/lib/game/rules";
 import { SCHEDULE_KINDS, dayToIso, isoToDay, schedule, type ScheduleItem } from "@/lib/game/schedule";
@@ -15,6 +15,7 @@ import { REGIONS, findCity } from "@/lib/world/geo";
 import { CONTACT_INTENTS, Carnet, KIND_LABELS } from "./CharacterSheet";
 import { AskPerson, GRADE_COLOR } from "./IntelUI";
 import { BodyChart } from "./BodyChart";
+import { LADDER, romancePossible } from "@/lib/game/bonds";
 import { DOC_LABELS, StoryDocView } from "./StoryCards";
 import type { NavTarget } from "./Terminal";
 import { Possessions } from "./WeekPlanner";
@@ -599,6 +600,7 @@ function Avatar({ r, size = 40 }: { r: Relation; size?: number }) {
     <span className="relative grid shrink-0 place-items-center rounded-full font-semibold text-white" style={{ width: size, height: size, fontSize: size / 2.8, background: `linear-gradient(150deg, ${kind.color}, color-mix(in srgb, ${kind.color} 55%, black))` }}>
       {initials}
       {r.status === "actif" && <span className="absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 border-ink bg-success" />}
+      {r.kind === "amour" && <span className="absolute -top-1 -left-1 text-[11px] leading-none text-[#e0607e] drop-shadow">♥</span>}
     </span>
   );
 }
@@ -688,6 +690,9 @@ function Conversation({ state, r, onBack, onChange, onAction }: { state: GameSta
   const city = findCity(r.cityId);
   const bubbles = thread(state, r);
   const since = Math.max(0, state.world.day - r.lastSeenDay);
+  const spark = romancePossible(state, r, currentAge(state));
+  const op = r.operativeId ? state.roster.find((o) => o.id === r.operativeId) : undefined;
+  const step = LADDER.indexOf(r.kind);
   const send = (t: string) => {
     if (!onAction || !t.trim()) return;
     onAction({ type: "contact", name: r.name, intent: t.trim() });
@@ -723,6 +728,30 @@ function Conversation({ state, r, onBack, onChange, onAction }: { state: GameSta
       </div>
       {info && (
         <div className="animate-rise space-y-3 border-b border-line bg-panel/60 px-4 py-3">
+          {/* Où en est ce lien. */}
+          {step >= 0 ? (
+            <div className="flex items-center gap-1">
+              {LADDER.map((k, i) => (
+                <div key={k} className="flex flex-1 flex-col items-center gap-0.5">
+                  <span className="h-1 w-full rounded-full" style={{ background: i <= step ? KIND_LABELS[k].color : "var(--color-line)" }} />
+                  <span className={`text-[9px] ${i === step ? "font-semibold" : "text-faint"}`} style={i === step ? { color: KIND_LABELS[k].color } : undefined}>
+                    {KIND_LABELS[k].label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] font-semibold" style={{ color: kind.color }}>
+              {r.kind === "ex" ? "♡ " : ""}
+              {kind.label}
+            </p>
+          )}
+          {op && (
+            <p className="rounded-lg bg-night/60 px-2 py-1 text-[10px] text-muted">
+              Membre de l'effectif · {op.codename ? `« ${op.codename} » · ` : ""}
+              {op.status === "en_mission" ? "en mission" : op.status === "blesse" ? "blessé·e" : op.status}
+            </p>
+          )}
           <p className="text-[11px] text-muted">
             <span style={{ color: kind.color }}>{kind.label}</span> · {r.role} · {city ? city.name : r.location}
             {r.knownAs && r.knownAs !== "reel" ? ` · te connaît comme « ${r.knownAs === "code" ? "ton nom de code" : r.knownAs} »` : ""}
@@ -736,7 +765,20 @@ function Conversation({ state, r, onBack, onChange, onAction }: { state: GameSta
             {r.knows ? <span className="text-muted"> Sait : {r.knows}.</span> : null}
           </p>
           {r.notes && <p className="text-[11px] text-muted italic">{r.notes}</p>}
+          {(r.history ?? []).length > 0 && (
+            <ol className="relative space-y-1 border-l border-line pl-3">
+              {[...(r.history ?? [])].reverse().map((h, i) => (
+                <li key={i} className="relative text-[10px] leading-snug">
+                  <span className="absolute top-1 -left-[15.5px] h-1.5 w-1.5 rounded-full bg-brass" />
+                  <span className="font-mono text-faint">{shortDate(dayToIso(state, h.day))}</span> <span className="text-ivory/85">{h.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
+      )}
+      {spark && (
+        <p className="mx-3 mt-2 rounded-full bg-[#e0607e]/15 px-3 py-1 text-center text-[11px] text-[#e0607e]">♥ Il se passe quelque chose entre vous.</p>
       )}
       {/* Le fil. */}
       <div className="flex-1 space-y-1.5 px-3 py-3">
@@ -762,6 +804,11 @@ function Conversation({ state, r, onBack, onChange, onAction }: { state: GameSta
             <span className="shrink-0">
               <AskPerson state={state} source="relation" refId={r.name} onChange={onChange} />
             </span>
+            {onAction && spark && (
+              <button onClick={() => send("Lui dire ce que tu ressens")} className="shrink-0 rounded-full border border-[#e0607e]/60 px-2.5 py-1 text-[10px] text-[#e0607e] hover:bg-[#e0607e]/10 active:scale-95">
+                ♥ Lui dire ce que tu ressens
+              </button>
+            )}
             {onAction &&
               CONTACT_INTENTS.map((i) => (
                 <button key={i} onClick={() => send(i)} className="shrink-0 rounded-full border border-line px-2.5 py-1 text-[10px] text-muted hover:border-brass hover:text-ivory active:scale-95">
