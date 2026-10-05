@@ -10,7 +10,7 @@ import { REST_DAYS, currentNode, type NodeOutcome } from "./missions";
 import { ACTIVITIES } from "./planner";
 import { MISSION_IMPORTANCE, RANKS, SKILLS, missionBonus, missionMerit } from "./rules";
 import type { ActivityChoice, GameState, GaugeShift, Mission, RankId, StoryCard, StoryDoc } from "./types";
-import { findCity, findCountry } from "@/lib/world/geo";
+import { findCity, findCountry, REGIONS } from "@/lib/world/geo";
 import { findFaction } from "@/lib/world/factions";
 
 type NodeOutcomeLike = Pick<NodeOutcome, "outcome" | "notices" | "finished">;
@@ -23,6 +23,8 @@ function targetLabel(state: GameState, p: ActivityChoice): string | undefined {
     findBranch(c.identity.agency, p.target)?.name ??
     c.legends.find((l) => l.id === p.target)?.name ??
     state.duties.find((d) => d.id === p.target)?.title ??
+    ACTIVITIES[p.activity]?.options?.find((o) => o.id === p.target)?.label ??
+    REGIONS[p.target as keyof typeof REGIONS]?.label ??
     findCity(p.target)?.name ??
     AGENCIES[p.target as keyof typeof AGENCIES]?.name ??
     p.target
@@ -30,7 +32,7 @@ function targetLabel(state: GameState, p: ActivityChoice): string | undefined {
 }
 
 /** Le bilan d'une semaine jouée : les trois créneaux, ce qui a bougé, et le détail. */
-export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean): StoryCard {
+export function weekCard(before: GameState, after: GameState, plan: ActivityChoice[], lines: string[], event: boolean, weeks = 1, stop: string | null = null): StoryCard {
   const a = before.character;
   const b = after.character;
   const deltas: { label: string; value: number; unit?: string; good: boolean }[] = [];
@@ -57,7 +59,15 @@ export function weekCard(before: GameState, after: GameState, plan: ActivityChoi
     deltas,
     lines,
     event,
+    weeks,
+    stop,
   };
+}
+
+/** L'anniversaire : un moment à part. */
+export function birthdayCard(state: GameState, age: number, date: string): StoryCard {
+  const c = state.character;
+  return { type: "anniversaire", name: c.codename ? `« ${c.codename} »` : c.identity.firstName, age, dateLabel: formatDate(date) };
 }
 
 /** L'ordre de mission, au départ. */
@@ -150,7 +160,9 @@ export function promotionCard(state: GameState, rank: RankId, notices: string[])
 export function cardToText(card: StoryCard): string {
   switch (card.type) {
     case "semaine":
-      return `[Semaine jouée : ${card.plan.map((p) => p.label).join(", ")}]`;
+      return `[${(card.weeks ?? 1) > 1 ? `${card.weeks} semaines jouées` : "Semaine jouée"} : ${card.plan.map((p) => p.label).join(", ")}${card.stop ? ` — arrêt : ${card.stop}` : ""}]`;
+    case "anniversaire":
+      return `[Anniversaire : ${card.age} ans, le ${card.dateLabel}]`;
     case "briefing":
       return `[Ordre de mission : ${card.name}, ${MISSION_IMPORTANCE[card.importance].label.toLowerCase()}, ${card.city}]`;
     case "etape":

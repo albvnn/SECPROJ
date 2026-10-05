@@ -14,6 +14,7 @@ import { REGIONS, findCity, type RegionId } from "@/lib/world/geo";
 import { DOSSIER_FULL } from "@/lib/world/threats";
 import { SkillChips } from "./glyphs";
 import { GRADE_COLOR } from "./IntelUI";
+import { KnowledgeMarket } from "./KnowledgeMarket";
 import { DOC_LABELS, StoryDocView } from "./StoryCards";
 
 /* ------------------------------------------------------------------ */
@@ -61,7 +62,32 @@ export interface Focus {
   n: number;
 }
 
-export function Archives({ state, focus }: { state: GameState; focus?: Focus | null }) {
+/** Les archives : le classeur, et la base de connaissance (ce que tu sais, et ce que ça vaut). */
+export function Archives({ state, focus, onChange }: { state: GameState; focus?: Focus | null; onChange?: (s: GameState) => void }) {
+  const [view, setView] = useState<"classeur" | "savoir">("classeur");
+  useEffect(() => {
+    if (focus) setView("classeur");
+  }, [focus]);
+  return (
+    <div className="space-y-5">
+      <div className="flex overflow-hidden rounded-sm border border-line" role="tablist">
+        {(
+          [
+            ["classeur", "▤ Le classeur", "Tes dossiers et ceux de l'agence"],
+            ["savoir", "⇄ Ce que tu sais", "Verser, offrir, échanger, vendre"],
+          ] as const
+        ).map(([id, label, hint]) => (
+          <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)} title={hint} className={`flex-1 px-3 py-2 text-xs font-semibold tracking-[0.12em] uppercase ${view === id ? "bg-brass/15 text-brass-soft" : "text-muted hover:text-ivory"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "classeur" ? <Cabinet state={state} focus={focus} /> : <KnowledgeMarket state={state} onChange={onChange} />}
+    </div>
+  );
+}
+
+function Cabinet({ state, focus }: { state: GameState; focus?: Focus | null }) {
   const drawers = useMemo(() => buildDrawers(state), [state]);
   const [openDrawer, setOpenDrawer] = useState(drawers.find((d) => d.folders.length)?.id ?? "operations");
   const [folderId, setFolderId] = useState<string | null>(null);

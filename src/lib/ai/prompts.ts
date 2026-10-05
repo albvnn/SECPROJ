@@ -36,6 +36,7 @@ import { clearance, clearanceDef, threatVisible } from "@/lib/game/intel";
 import { findPossession } from "@/lib/game/economy";
 import { bodyLine } from "@/lib/game/body";
 import { romancePossible } from "@/lib/game/bonds";
+import { postLine } from "@/lib/game/post";
 import { daysBetween, formatDate } from "@/lib/game/calendar";
 import type { GameState, LogEntry, PhaseId, PlayerAction } from "@/lib/game/types";
 
@@ -127,6 +128,7 @@ export function characterSheet(state: GameState): string {
     `Compétence signature : ${SKILLS[c.signature].label}`,
     `Santé ${c.health}/${c.healthMax} — Moral ${c.morale}/${c.moraleMax} — Réputation dans l'agence ${c.reputation}/100`,
     `Grade : ${rank.label}. Pouvoirs : ${rank.powers} Contraintes : ${rank.duties}`,
+    ...(postLine(state) ? [`Poste : ${postLine(state)}. Il a des responsabilités chaque semaine et chaque mois ; ses supérieurs remarquent quand il les néglige.`] : []),
     `Mérite : ${formatMerit(c.merit)} — blâmes : ${c.blames}${career ? ` — suite de carrière : ${career}` : ""}`,
     `Place dans l'organisation : ${position}`,
     RANKS[c.rank].order >= RANKS.agent.order ? `Estime des Branches : ${branches}` : null,

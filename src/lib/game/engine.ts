@@ -880,9 +880,11 @@ export function applyUpdate(
     const weeks = Math.floor(w.day / 7) - weeksBefore;
     const allowance = RANKS[c.rank].allowance;
     if (weeks > 0 && allowance > 0 && w.phase !== "apres") {
-      c.money += weeks * allowance;
-      c.ledger = pushLedger(c.ledger, w.day, `Solde versée (${weeks} sem.)`, weeks * allowance);
-      notices.push(`Solde : +${formatEuros(weeks * allowance)} (${weeks} semaine${weeks > 1 ? "s" : ""})`);
+      // Un échelon élevé dans le poste : solde +10 %.
+      const pay = Math.round(weeks * allowance * ((state.post?.echelon ?? 0) >= 1 ? 1.1 : 1));
+      c.money += pay;
+      c.ledger = pushLedger(c.ledger, w.day, `Solde versée (${weeks} sem.)`, pay);
+      notices.push(`Solde : +${formatEuros(pay)} (${weeks} semaine${weeks > 1 ? "s" : ""})`);
     }
     notices.push(days === 1 ? "Un jour passe." : `${days} jours passent.`);
     const ageAfter = ageNow();

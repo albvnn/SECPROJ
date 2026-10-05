@@ -235,6 +235,21 @@ export interface Legend {
   createdDay: number;
 }
 
+/** Le poste occupé : états de service, échelon, responsabilités tenues. */
+export interface PostState {
+  id: string;
+  points: number;
+  echelon: number;
+  /** Jour de la prise de poste. */
+  since: number;
+  /** Jours où chaque responsabilité a été tenue. */
+  done: Record<string, number[]>;
+  /** Jour du dernier bilan mensuel. */
+  lastReview: number;
+  /** États de service gagnés dans ce poste, au total. */
+  total?: number;
+}
+
 export interface LedgerEntry {
   day: number;
   label: string;
@@ -428,6 +443,16 @@ export type StoryCard =
       deltas: { label: string; value: number; unit?: string; good: boolean }[];
       lines: string[];
       event: boolean;
+      /** Nombre de semaines jouées d'affilée (1 si absent). */
+      weeks?: number;
+      /** Pourquoi le temps s'est arrêté plus tôt. */
+      stop?: string | null;
+    }
+  | {
+      type: "anniversaire";
+      name: string;
+      age: number;
+      dateLabel: string;
     }
   | {
       type: "briefing";
@@ -810,7 +835,15 @@ export type ActivityId =
   | "legende"
   | "resister"
   | "evasion"
-  | "attendre";
+  | "attendre"
+  | "sport"
+  | "exercice"
+  | "veille"
+  | "job"
+  | "soins"
+  | "mondanites"
+  | "profil_bas"
+  | "instruire";
 
 export interface ActivityChoice {
   activity: ActivityId;
@@ -973,6 +1006,26 @@ export interface Knowledge {
   requests: IntelRequest[];
   /** Agences rivales dont on a percé le Cercle. */
   circles: AgencyId[];
+  /** Ce que tu as obtenu en échange d'autres informations. */
+  acquired?: InfoItem[];
+  /** À qui chaque information a déjà été cédée. */
+  traded?: Record<string, string[]>;
+}
+
+/** Une information que tu détiens : elle a une valeur, elle vieillit, et elle peut se monnayer. */
+export interface InfoItem {
+  id: string;
+  title: string;
+  /** D'où elle vient. */
+  origin: "rapport" | "operation" | "faction" | "piece" | "echange";
+  /** Sur quoi elle porte (pour les écrans). */
+  about: string;
+  region?: string;
+  /** 1 (rumeur) à 5 (secret d'État). */
+  value: number;
+  day: number;
+  /** Secret de ton agence : la céder à l'extérieur, c'est trahir. */
+  sensitive: boolean;
 }
 
 export interface GameState {
@@ -1001,7 +1054,9 @@ export interface GameState {
   gmNotes: string;
   log: LogEntry[];
   choices: Choice[];
-  settings: { narration: NarrationMode; pace: Pace };
+  settings: { narration: NarrationMode; pace: Pace; span?: number | "auto" };
+  /** Le poste et ses échelons. */
+  post?: PostState | null;
   scene: Scene | null;
   /** Tours joués depuis le début de la phase en cours. */
   phaseTurns: number;
@@ -1057,7 +1112,7 @@ export type PlayerAction =
   /** Coup signature du siège, ou soutien d'une Branche, pendant une mission. */
   | { type: "resource"; source: string }
   /** Jouer une semaine planifiée (trois créneaux). */
-  | { type: "week"; plan: ActivityChoice[] }
+  | { type: "week"; plan: ActivityChoice[]; span?: number | "auto" }
   /** Accepter une mission et la préparer (équipe, équipement, couverture). */
   | { type: "mission_start"; offer: string; team: string[]; gadgets: string[]; legend?: string }
   /** Choisir une approche à l'étape en cours d'une mission. */

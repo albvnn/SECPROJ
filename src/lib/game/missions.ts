@@ -2,6 +2,7 @@
  * Missions jouées par le moteur : génération, préparation, étapes et résultat.
  * Le narrateur ne fait que raconter ce que ce module décide.
  */
+import { currentPost, postOf } from "./post";
 import { pushLedger } from "./ledger";
 import { AGENCIES, findBranch, findSeat } from "./agencies";
 import { findGadget, GADGETS } from "./gadgets";
@@ -894,6 +895,19 @@ export function missionAllowance(state: GameState, offer: MissionOffer): Allowan
     lines.push({ label: "Contre-espionnage", detail: "fonds −20 % : rien ne doit laisser de trace", tone: "minus" });
   }
 
+  // Les états de service dans le poste.
+  {
+    const post = currentPost(state);
+    const def = postOf(state);
+    if (post && def && post.echelon >= 2) {
+      intel += 1;
+      lines.push({ label: `Échelon : ${def.echelons[post.echelon]}`, detail: post.echelon >= 3 ? "+1 renseignement, moyens +15 %" : "+1 renseignement", tone: "plus" });
+    }
+    if (post && post.echelon >= 3) {
+      budget = Math.round(budget * 1.15);
+      funds = Math.round(funds * 1.15);
+    }
+  }
   // Les gouvernements paient.
   if (Math.abs(funding - 1) >= 0.03) lines.push({ label: "Satisfaction des gouvernements", detail: `moyens ×${funding.toFixed(2)}`, tone: funding > 1 ? "plus" : "minus" });
   const factor = trust * weight * funding;

@@ -11,21 +11,58 @@ import { ATTRIBUTE_IDS, ATTRIBUTES, RANKS, SKILLS, formatEuros, skillsOf } from 
 import type { ActivityChoice, ActivityId, AgencyId, GameState, SkillId } from "@/lib/game/types";
 import { formatDate } from "@/lib/game/calendar";
 import { upcoming } from "@/lib/world/agenda";
-import { CITIES, findCity, findCountry } from "@/lib/world/geo";
+import { CITIES, REGION_IDS, REGIONS, findCity, findCountry } from "@/lib/world/geo";
+import { knownRegions, regionOfCity } from "@/lib/game/intel";
 
 /** Planning d'une semaine : trois créneaux, puis le moteur fait passer sept jours. */
+export type Span = number | "auto";
+
+const SPANS: { value: Span; label: string; hint: string }[] = [
+  { value: 1, label: "1 sem.", hint: "Une semaine, racontée en détail" },
+  { value: 2, label: "2 sem.", hint: "Deux semaines avec le même planning" },
+  { value: 4, label: "1 mois", hint: "Quatre semaines avec le même planning" },
+  { value: "auto", label: "Auto", hint: "Jusqu'au prochain événement (8 semaines au plus) : nouvelle mission, devoir pressant, anniversaire, promotion, blessure…" },
+];
+
+export const playLabel = (span: Span) => (span === "auto" ? "Avancer jusqu'au prochain événement ▸" : span > 1 ? `Jouer ${span === 4 ? "le mois" : `${span} semaines`} ▸` : "Jouer la semaine ▸");
+
+/** Le rythme : combien de temps faire passer avec ce planning. */
+export function SpanPicker({ value, onChange, disabled = false }: { value: Span; onChange?: (s: Span) => void; disabled?: boolean }) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-sm border border-line" role="radiogroup" aria-label="Durée">
+      {SPANS.map((s) => (
+        <button
+          key={String(s.value)}
+          role="radio"
+          aria-checked={value === s.value}
+          disabled={disabled || !onChange}
+          onClick={() => onChange?.(s.value)}
+          title={s.hint}
+          className={`px-2 py-1 text-[10px] font-semibold tracking-[0.08em] uppercase transition-colors ${value === s.value ? "bg-brass/20 text-brass-soft" : "text-muted hover:text-ivory"}`}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function WeekSlots({
   state,
   plan,
   setPlan,
   onPlay,
   busy,
+  span = 1,
+  onSpan,
 }: {
   state: GameState;
   plan: ActivityChoice[];
   setPlan: (p: ActivityChoice[]) => void;
   onPlay?: () => void;
   busy: boolean;
+  span?: Span;
+  onSpan?: (s: Span) => void;
 }) {
   const error = planError(state, plan);
   const setSlot = (i: number, choice: ActivityChoice) => setPlan(plan.map((p, j) => (j === i ? choice : p)));
@@ -35,7 +72,7 @@ export function WeekSlots({
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-serif text-2xl">{state.character.prison ? "En cellule" : "Ta semaine"}</h3>
         <span className="text-[11px] text-faint">
-          Jour {state.world.day} → {state.world.day + 7}
+          Jour {state.world.day} → {span === "auto" ? "…" : state.world.day + 7 * span}
         </span>
       </div>
       <div className="space-y-2">
@@ -51,12 +88,22 @@ export function WeekSlots({
           />
         ))}
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>{error ?? "Sept jours passent, le narrateur raconte. Un événement peut survenir."}</p>
+      <div className="mt-4 space-y-2">
+        <p className={`text-xs ${error ? "text-fail" : "text-muted"}`}>
+          {error ??
+            (span === "auto"
+              ? "Le temps file avec ce planning et s'arrête de lui-même sur ce qui compte."
+              : span > 1
+                ? `${span} semaines d'affilée avec ce planning ; le temps s'arrête plus tôt si quelque chose compte.`
+                : "Sept jours passent, le narrateur raconte. Un événement peut survenir.")}
+        </p>
         {onPlay && (
-          <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
-            Jouer la semaine ▸
-          </button>
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            {!state.character.prison && <SpanPicker value={span} onChange={onSpan} disabled={busy} />}
+            <button onClick={onPlay} disabled={busy || Boolean(error)} className="btn btn-primary px-6">
+              {playLabel(state.character.prison ? 1 : span)}
+            </button>
+          </span>
         )}
       </div>
     </section>
@@ -159,6 +206,10 @@ function defaultTarget(state: GameState, a: ActivityId): string | undefined {
       return Object.keys(c.learning ?? {})[0] ?? ALL_LANGUAGES.find((l) => !speaksLanguage(c, l));
     case "legend":
       return c.legends.length >= legendCap(c) ? c.legends[0]?.id : undefined;
+    case "choice":
+      return d.options?.[0]?.id;
+    case "region":
+      return regionOfCity(c.station ?? state.world.cityId) ?? "europe";
     default:
       return undefined;
   }
@@ -184,12 +235,20 @@ const SHORT: Record<ActivityId, string> = {
   resister: "Sang-froid face aux aveux",
   evasion: "Préparer l'évasion",
   attendre: "Compter sur l'échange",
+  sport: "Corps · compétence physique +1 · moral +1",
+  exercice: "Deux compétences de terrain +1",
+  veille: "Une région suivie six mois",
+  job: "Argent · couverture +10",
+  soins: "Guérison plus rapide · santé +2",
+  mondanites: "Un contact, ou réputation +1",
+  profil_bas: "Notoriété −12 dans deux pays",
+  instruire: "Réputation +3 · Tactique +1",
 };
 
 const GROUPS: { label: string; ids: ActivityId[] }[] = [
-  { label: "Toi", ids: ["entrainement", "cours", "langue", "repos", "loisirs"] },
-  { label: "Ta vie", ids: ["relation", "couverture", "devoir"] },
-  { label: "Le métier", ids: ["branche", "legende", "informateurs", "escouade", "antenne", "theatre", "agence"] },
+  { label: "Toi", ids: ["entrainement", "sport", "exercice", "cours", "langue", "repos", "soins", "loisirs"] },
+  { label: "Ta vie", ids: ["relation", "mondanites", "couverture", "job", "devoir"] },
+  { label: "Le métier", ids: ["veille", "profil_bas", "branche", "legende", "informateurs", "escouade", "antenne", "theatre", "agence", "instruire"] },
   { label: "Détention", ids: ["resister", "evasion", "attendre"] },
 ];
 
@@ -284,6 +343,36 @@ function TargetPicker({ state, slot, onChange }: { state: GameState; slot: Activ
   const c = state.character;
   const agency = AGENCIES[c.identity.agency];
   const set = (target: string) => onChange({ ...slot, ...(target ? { target } : { target: undefined }) });
+  if (def.target === "choice" && def.options) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {def.options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => set(o.id)}
+            title={o.hint}
+            className={`rounded-sm border px-2 py-1 text-left text-[11px] transition-colors ${slot.target === o.id ? "border-brass bg-brass/15 text-brass-soft" : "border-line text-muted hover:border-line-strong hover:text-ivory"}`}
+          >
+            {o.label}
+            <span className="block text-[9px] text-faint">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (def.target === "region") {
+    const watched = knownRegions(state);
+    return (
+      <select className="field py-1.5 text-xs" value={slot.target ?? ""} onChange={(e) => set(e.target.value)}>
+        {REGION_IDS.map((r) => (
+          <option key={r} value={r}>
+            {REGIONS[r].label}
+            {watched.has(r) ? " · déjà suivie" : ""}
+          </option>
+        ))}
+      </select>
+    );
+  }
   if (def.target === "skill" || def.target === "academic") {
     const seatSkills = new Set(findSeat(c.identity.agency, c.seat)?.specialty ?? []);
     return (

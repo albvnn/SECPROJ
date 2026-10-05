@@ -39,6 +39,7 @@ import { Mallette } from "./Mallette";
 import { Terminal, type NavTarget } from "./Terminal";
 import { Phone, type PhoneApp } from "./Phone";
 import { schedule } from "@/lib/game/schedule";
+import { SpanPicker, playLabel, type Span } from "./WeekPlanner";
 import type { SheetTab } from "./CharacterSheet";
 import { threatVisible } from "@/lib/game/intel";
 import { StoryCardView, StoryDocView } from "./StoryCards";
@@ -388,13 +389,14 @@ export function GameScreen({ initial }: { initial: GameState }) {
     }
   };
   const atBase = w.phase === "base" && !state.mission;
+  const span: Span = c.prison ? 1 : (state.settings.span ?? "auto");
   const urgentCount = schedule(state, 14).filter((i) => i.urgent).length;
   const terminalActions = busy || state.log.length === 0
     ? []
     : [
         ...state.choices.map((ch, i) => ({ id: `act:choix:${i}`, icon: String(i + 1), label: ch.label, hint: "Choix proposé par le narrateur", run: () => (setTab("recit"), play({ type: "choice", text: ch.label })) })),
         ...(atBase && state.choices.length === 0 && !planError(state, plan)
-          ? [{ id: "act:semaine", icon: "▶", label: "Jouer la semaine", hint: plan.map((p) => ACTIVITIES[p.activity]?.label ?? p.activity).join(" · "), run: () => play({ type: "week", plan }) }]
+          ? [{ id: "act:semaine", icon: "▶", label: playLabel(span).replace(" ▸", ""), hint: plan.map((p) => ACTIVITIES[p.activity]?.label ?? p.activity).join(" · "), run: () => play({ type: "week", plan, span }) }]
           : []),
         { id: "act:export", icon: "⇩", label: "Exporter la sauvegarde", hint: "Un fichier JSON de ta partie", run: () => exportSave(state) },
       ];
@@ -494,7 +496,7 @@ export function GameScreen({ initial }: { initial: GameState }) {
               )}
               {tab === "archives" && (
                 <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8">
-                  <Archives state={state} focus={archiveFocus} />
+                  <Archives state={state} focus={archiveFocus} onChange={busy ? undefined : commit} />
                 </div>
               )}
               {tab === "agence" && (
@@ -686,7 +688,9 @@ export function GameScreen({ initial }: { initial: GameState }) {
             onStop={() => abortRef.current?.abort()}
             storageWarning={storageWarning}
             plan={plan}
-            onPlayWeek={() => play({ type: "week", plan })}
+            onPlayWeek={() => play({ type: "week", plan, span })}
+            span={span}
+            onSpan={(v) => updateSettings({ span: v })}
             onAction={(a) => play(a)}
             onChange={commit}
             openTab={(t) => setTab(t)}
@@ -1078,7 +1082,21 @@ function MainTabs({ state, tab, setTab }: { state: GameState; tab: MainTab; setT
 }
 
 /** À la base, entre deux scènes : les deux décisions possibles, côte à côte. */
-function BaseDock({ state, plan, onPlayWeek, openTab }: { state: GameState; plan: ActivityChoice[]; onPlayWeek: () => void; openTab: (t: MainTab) => void }) {
+function BaseDock({
+  state,
+  plan,
+  onPlayWeek,
+  openTab,
+  span,
+  onSpan,
+}: {
+  state: GameState;
+  plan: ActivityChoice[];
+  onPlayWeek: () => void;
+  openTab: (t: MainTab) => void;
+  span: Span;
+  onSpan: (s: Span) => void;
+}) {
   const error = planError(state, plan);
   const offer = state.offers[0];
   const canGo = Boolean(offer) && !canStartMission(state);
@@ -1099,8 +1117,9 @@ function BaseDock({ state, plan, onPlayWeek, openTab }: { state: GameState; plan
           ))}
         </p>
         {error && <p className="text-[11px] text-fail">{error}</p>}
+        {!state.character.prison && <SpanPicker value={span} onChange={onSpan} />}
         <button onClick={onPlayWeek} disabled={Boolean(error)} title={error ?? ""} className="btn btn-primary py-2">
-          Jouer la semaine ▸
+          {playLabel(state.character.prison ? 1 : span)}
         </button>
       </div>
       {canGo && (
@@ -1127,6 +1146,8 @@ function Composer({
   storageWarning,
   plan,
   onPlayWeek,
+  span,
+  onSpan,
   onAction,
   onChange,
   openTab,
@@ -1142,6 +1163,8 @@ function Composer({
   storageWarning: boolean;
   plan: ActivityChoice[];
   onPlayWeek: () => void;
+  span: Span;
+  onSpan: (s: Span) => void;
   onAction: (a: PlayerAction) => void;
   onChange: (s: GameState) => void;
   openTab: (t: MainTab) => void;
@@ -1189,7 +1212,7 @@ function Composer({
             Sauvegarde impossible : stockage du navigateur plein. Exporte ta partie pour ne rien perdre.
           </p>
         )}
-        {atBase && !busy && choices.length === 0 && <BaseDock state={state} plan={plan} onPlayWeek={onPlayWeek} openTab={openTab} />}
+        {atBase && !busy && choices.length === 0 && <BaseDock state={state} plan={plan} onPlayWeek={onPlayWeek} openTab={openTab} span={span} onSpan={onSpan} />}
         {choices.length > 0 && (
           <ul className="mb-3 grid gap-2 sm:grid-cols-2">
             {choices.map((choice, i) => (
